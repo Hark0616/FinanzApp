@@ -5,6 +5,7 @@ import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.data.notification.parsers.ParserDispatcher
+import com.ivan.finanzapp.data.remote.LocalAiClassifier
 import com.ivan.finanzapp.data.remote.TransactionAiClassifier
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.domain.usecase.AccountResolver
@@ -34,6 +35,7 @@ private const val LOW_CONFIDENCE_THRESHOLD = 0.65
 class TransactionProcessor @Inject constructor(
     private val parserDispatcher: ParserDispatcher,
     private val aiClassifier: TransactionAiClassifier,
+    private val localAiClassifier: LocalAiClassifier,
     private val categoryResolver: CategoryResolver,
     private val accountResolver: AccountResolver,
     private val transactionDao: TransactionDao,
@@ -76,11 +78,20 @@ class TransactionProcessor @Inject constructor(
 
         // Paso 2: fallback de IA si las reglas no matchearon
         if (parsed == null) {
-            val aiResult = aiClassifier.classifyWithCategory(packageName, title, text)
-            if (aiResult != null) {
-                parsed = aiResult.first
-                aiCategoryName = aiResult.second
+            // Intentar primero con IA local en dispositivo (ej. Gemini Nano en S26 Ultra)
+            val localResult = localAiClassifier.classifyLocally(packageName, title, text)
+            if (localResult != null) {
+                parsed = localResult.first
+                aiCategoryName = localResult.second
                 usedAi = true
+            } else {
+                // Fallback a IA en la nube (OpenRouter) si la local no está habilitada o falla
+                val aiResult = aiClassifier.classifyWithCategory(packageName, title, text)
+                if (aiResult != null) {
+                    parsed = aiResult.first
+                    aiCategoryName = aiResult.second
+                    usedAi = true
+                }
             }
         }
 

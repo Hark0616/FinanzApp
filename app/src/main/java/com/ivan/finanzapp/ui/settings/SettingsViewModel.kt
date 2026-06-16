@@ -3,6 +3,7 @@ package com.ivan.finanzapp.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ivan.finanzapp.data.local.SecurePrefs
+import com.ivan.finanzapp.data.remote.LocalAiClassifier
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.entity.AccountEntity
@@ -23,30 +24,40 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val securePrefs: SecurePrefs,
     private val accountDao: AccountDao,
-    private val creditCardDao: CreditCardDao
+    private val creditCardDao: CreditCardDao,
+    private val localAiClassifier: LocalAiClassifier
 ) : ViewModel() {
 
     private val _isAddAccountDialogVisible = MutableStateFlow(false)
     private val _isSavedSuccess = MutableStateFlow(false)
+    private val _isLocalAiPrefChanged = MutableStateFlow(false)
 
     val uiState: StateFlow<SettingsUiState> = combine(
         accountDao.observeAccounts(),
         _isAddAccountDialogVisible,
-        _isSavedSuccess
-    ) { accounts, isAddDialogVisible, isSavedSuccess ->
+        _isSavedSuccess,
+        _isLocalAiPrefChanged
+    ) { accounts, isAddDialogVisible, isSavedSuccess, _ ->
         val apiKey = securePrefs.getOpenRouterApiKey() ?: ""
         SettingsUiState(
             isLoading = false,
             apiKey = apiKey,
             accounts = accounts,
             isAddAccountDialogVisible = isAddDialogVisible,
-            isSavedSuccess = isSavedSuccess
+            isSavedSuccess = isSavedSuccess,
+            isLocalAiSupported = localAiClassifier.isLocalAiSupported(),
+            isLocalAiEnabled = securePrefs.isLocalAiEnabled()
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = SettingsUiState()
     )
+
+    fun setLocalAiEnabled(enabled: Boolean) {
+        securePrefs.setLocalAiEnabled(enabled)
+        _isLocalAiPrefChanged.update { !it }
+    }
 
     fun saveApiKey(apiKey: String) {
         viewModelScope.launch {

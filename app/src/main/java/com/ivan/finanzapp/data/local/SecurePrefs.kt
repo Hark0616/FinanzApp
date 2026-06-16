@@ -57,8 +57,15 @@ class SecurePrefs @Inject constructor(
         prefs.edit().remove(KEY_OPENROUTER_API_KEY).apply()
     }
 
+    fun isLocalAiEnabled(): Boolean = prefs.getBoolean(KEY_LOCAL_AI_ENABLED, false)
+
+    fun setLocalAiEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LOCAL_AI_ENABLED, enabled).apply()
+    }
+
     companion object {
         private const val KEY_DB_PASSPHRASE = "db_passphrase"
         private const val KEY_OPENROUTER_API_KEY = "openrouter_api_key"
+        private const val KEY_LOCAL_AI_ENABLED = "local_ai_enabled"
     }
 }

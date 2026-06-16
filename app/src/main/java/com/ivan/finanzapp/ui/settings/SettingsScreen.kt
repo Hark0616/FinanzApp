@@ -103,6 +103,37 @@ fun SettingsScreen(
                                 modifier = Modifier.padding(top = 8.dp)
                             )
                         }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                                Text(
+                                    "Procesamiento local con IA",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                val description = if (state.isLocalAiSupported) {
+                                    "Compatible con tu dispositivo. Usa Gemini Nano local para clasificar transacciones sin enviar datos a la nube."
+                                } else {
+                                    "IA en dispositivo no compatible. Requiere procesador con NPU premium (ej. Galaxy S26 Ultra). Se usará IA en la nube."
+                                }
+                                Text(
+                                    description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                            Switch(
+                                checked = state.isLocalAiEnabled,
+                                onCheckedChange = { viewModel.setLocalAiEnabled(it) },
+                                enabled = state.isLocalAiSupported
+                            )
+                        }
                     }
                 }
             }

@@ -7,5 +7,7 @@ data class SettingsUiState(
     val apiKey: String = "",
     val accounts: List<AccountEntity> = emptyList(),
     val isAddAccountDialogVisible: Boolean = false,
-    val isSavedSuccess: Boolean = false
+    val isSavedSuccess: Boolean = false,
+    val isLocalAiSupported: Boolean = false,
+    val isLocalAiEnabled: Boolean = false
 )
