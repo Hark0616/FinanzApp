@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">FinanzApp</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Balance</string>
+    <string name="balance_total">Balance Total</string>
+    <string name="ver_detalle_cuentas">Ver detalle por cuenta</string>
+    <string name="gastos_del_mes">Gastos del mes por categoría</string>
+
+    <!-- Permisos -->
+    <string name="permiso_notificaciones_titulo">Habilitar acceso a notificaciones</string>
+    <string name="permiso_notificaciones_desc">FinanzApp necesita leer tus notificaciones bancarias para registrar tus movimientos automáticamente. Tus datos se almacenan cifrados solo en este dispositivo.</string>
+    <string name="abrir_configuracion">Abrir configuración</string>
+
+    <!-- Navegación -->
+    <string name="nav_dashboard">Inicio</string>
+    <string name="nav_transacciones">Movimientos</string>
+    <string name="nav_tarjetas">Tarjetas</string>
+    <string name="nav_categorias">Categorías</string>
+    <string name="nav_ajustes">Ajustes</string>
+
+    <!-- Tarjeta de crédito -->
+    <string name="cupo_disponible">Cupo disponible</string>
+    <string name="deuda_actual">Deuda actual</string>
+    <string name="proximo_pago">Próximo pago</string>
+    <string name="cuota_minima">Cuota mínima</string>
+    <string name="porcentaje_uso">Uso del cupo</string>
+
+</resources>

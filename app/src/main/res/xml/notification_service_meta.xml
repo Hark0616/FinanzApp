@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Metadatos opcionales para el NotificationListenerService.
+  Android 13+ lo requiere para recibir notificaciones de llamadas.
+  Para nuestro caso (notificaciones bancarias) no es estrictamente
+  necesario, pero se incluye por compatibilidad.
+-->
+<notification-listener
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity=".MainActivity" />
