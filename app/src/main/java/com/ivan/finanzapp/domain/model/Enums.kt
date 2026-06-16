@@ -29,5 +29,7 @@ enum class BankSource {
     DAVIVIENDA,
     NEQUI,
     DAVIPLATA,
+    BANCOLOMBIA,
+    SMS,
     DESCONOCIDO
 }

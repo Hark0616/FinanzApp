@@ -42,6 +42,7 @@ class AccountResolver @Inject constructor(
             source == BankSource.NEQUI -> AccountType.NEQUI
             source == BankSource.DAVIPLATA -> AccountType.DAVIPLATA
             source == BankSource.DAVIVIENDA -> AccountType.AHORROS
+            source == BankSource.BANCOLOMBIA -> AccountType.AHORROS
             else -> null
         }
 

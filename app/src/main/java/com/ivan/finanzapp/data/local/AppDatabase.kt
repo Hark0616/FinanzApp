@@ -10,11 +10,13 @@ import com.ivan.finanzapp.data.local.converters.Converters
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
+import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.CategoryEntity
 import com.ivan.finanzapp.data.local.entity.CreditCardEntity
+import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.MerchantCategoryMappingEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import net.sqlcipher.database.SupportFactory
@@ -25,7 +27,8 @@ import net.sqlcipher.database.SupportFactory
         CreditCardEntity::class,
         CategoryEntity::class,
         TransactionEntity::class,
-        MerchantCategoryMappingEntity::class
+        MerchantCategoryMappingEntity::class,
+        LoanEntity::class
     ],
     version = 1,
     exportSchema = true
@@ -38,6 +41,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun transactionDao(): TransactionDao
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
+    abstract fun loanDao(): LoanDao
 
     companion object {
         private const val DB_NAME = "finanzapp.db"

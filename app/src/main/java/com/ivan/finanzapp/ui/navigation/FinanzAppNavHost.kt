@@ -44,31 +44,19 @@ fun FinanzAppNavHost(
         }
 
         composable(Screen.Transactions.route) {
-            PlaceholderScreen(
-                title = "Movimientos",
-                description = "Historial completo de transacciones (Fase 2)"
-            )
+            com.ivan.finanzapp.ui.transactions.TransactionsScreen()
         }
 
         composable(Screen.CreditCards.route) {
-            PlaceholderScreen(
-                title = "Tarjetas",
-                description = "Detalle y gestión de tarjetas de crédito (Fase 2)"
-            )
+            com.ivan.finanzapp.ui.creditcard.CreditCardsScreen()
         }
 
-        composable(Screen.Categories.route) {
-            PlaceholderScreen(
-                title = "Categorías",
-                description = "Gestión de categorías y presupuestos (Fase 2)"
-            )
+        composable(Screen.Loans.route) {
+            com.ivan.finanzapp.ui.loan.LoansScreen()
         }
 
         composable(Screen.Settings.route) {
-            PlaceholderScreen(
-                title = "Ajustes",
-                description = "Cuentas, API key de OpenRouter y backup (Fase 3)"
-            )
+            com.ivan.finanzapp.ui.settings.SettingsScreen()
         }
     }
 }

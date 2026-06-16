@@ -11,7 +11,7 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     object Dashboard : Screen("dashboard", "Inicio", Icons.Default.Home)
     object Transactions : Screen("transactions", "Movimientos", Icons.Default.SwapVert)
     object CreditCards : Screen("credit_cards", "Tarjetas", Icons.Default.CreditCard)
-    object Categories : Screen("categories", "Categorías", Icons.Default.Category)
+    object Loans : Screen("loans", "Créditos", Icons.Default.AccountBalance)
     object Settings : Screen("settings", "Ajustes", Icons.Default.Settings)
 }
 
@@ -20,6 +20,6 @@ val bottomNavScreens = listOf(
     Screen.Dashboard,
     Screen.Transactions,
     Screen.CreditCards,
-    Screen.Categories,
+    Screen.Loans,
     Screen.Settings
 )

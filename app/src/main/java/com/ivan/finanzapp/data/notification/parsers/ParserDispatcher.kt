@@ -18,7 +18,8 @@ class ParserDispatcher @Inject constructor() {
     private val parsers: List<BankParser> = listOf(
         DaviviendaParser(),
         NequiParser(),
-        DaviplataParser()
+        DaviplataParser(),
+        SmsParser()
     )
 
     /**

@@ -6,6 +6,7 @@ import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
+import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import dagger.Module
@@ -49,4 +50,7 @@ object DatabaseModule {
     @Provides
     fun provideMerchantMappingDao(db: AppDatabase): MerchantCategoryMappingDao =
         db.merchantCategoryMappingDao()
+
+    @Provides
+    fun provideLoanDao(db: AppDatabase): LoanDao = db.loanDao()
 }
