@@ -1,10 +1,10 @@
-# FinanzApp 💰
+# FinanzApp
 
 FinanzApp es una aplicación Android nativa diseñada para gestionar finanzas personales de forma automática y profesional ("re pro"). Permite centralizar saldos de cuentas de ahorro, billeteras digitales, tarjetas de crédito y préstamos de consumo, actualizándolos reactivamente mediante la interceptación y el análisis inteligente de notificaciones y mensajes SMS.
 
 ---
 
-## 🚀 Características Clave
+## Características Clave
 
 1. **Lectura Automática de Transacciones**:
    - Interceptación en tiempo real de notificaciones bancarias de compras físicas/online, ingresos y transacciones NFC.
@@ -34,7 +34,7 @@ FinanzApp es una aplicación Android nativa diseñada para gestionar finanzas pe
 
 ---
 
-## 🛠️ Stack Tecnológico
+## Stack Tecnológico
 
 - **UI**: Jetpack Compose con arquitectura reactiva de componentes.
 - **Asincronía**: Kotlin Coroutines & Flows (`StateFlow`, `combine`, `collectAsStateWithLifecycle`).
@@ -45,16 +45,16 @@ FinanzApp es una aplicación Android nativa diseñada para gestionar finanzas pe
 
 ---
 
-## 📱 Guía de Optimización de Batería (S26 Ultra y Redmi 10s)
+## Guía de Optimización de Batería (S26 Ultra y Redmi 10s)
 
 Para asegurar que Android no detenga el servicio de interceptación de transacciones en segundo plano, realiza las siguientes configuraciones:
 
-### 🔹 Samsung Galaxy S26 Ultra (One UI)
+### Samsung Galaxy S26 Ultra (One UI)
 1. Ve a **Ajustes → Aplicaciones → FinanzApp → Batería** y selecciona **"Sin Restricciones"**.
 2. Entra a **Cuidado del dispositivo → Batería → Límites de uso en segundo plano → Apps que nunca se suspenden** y añade **FinanzApp**.
 3. Abre el menú de aplicaciones recientes, presiona el logo de FinanzApp y selecciona **"Mantener abierta"** (icono de candado) para evitar cierres agresivos por RAM.
 
-### 🔹 Xiaomi Redmi 10s (MIUI / HyperOS)
+### Xiaomi Redmi 10s (MIUI / HyperOS)
 1. Ve a **Ajustes → Aplicaciones → Administrar aplicaciones → FinanzApp** y activa **"Inicio Automático"**.
 2. En la misma pantalla de información, entra a **"Ahorro de batería"** y selecciona **"Sin Restricciones"**.
 3. Abre FinanzApp, ve a la vista de tareas recientes, mantén pulsada la miniatura de la app y selecciona el **candado** para bloquearla en memoria.
