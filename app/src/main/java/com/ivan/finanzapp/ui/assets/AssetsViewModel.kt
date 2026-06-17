@@ -56,17 +56,20 @@ class AssetsViewModel @Inject constructor(
         accountDao.observeAccounts(),
         transactionDao.observeAll(),
         categoryDao.observeAll(),
-        loanDao.observeAll(),
-        combine(creditCardDao.observeAll(), deferredPurchaseDao.observeAll()) { cards, purchases ->
-            cards to purchases
+        combine(
+            loanDao.observeAll(),
+            creditCardDao.observeAll(),
+            deferredPurchaseDao.observeAll()
+        ) { loans, cards, purchases ->
+            Triple(loans, cards, purchases)
         }
-    ) { assets, accounts, transactions, categories, loans, cardsAndPurchases ->
+    ) { assets, accounts, transactions, categories, debtData ->
+        val (loans, cards, allDeferredPurchases) = debtData
+        
         // 1. Patrimonio (Activos)
         val savingsAccounts = accounts.filter { it.type != com.ivan.finanzapp.domain.model.AccountType.TARJETA_CREDITO }
         val liquidCash = savingsAccounts.sumOf { it.currentBalance }
-        // Filtrar por si queda algún sueldo residual estático
-        val customAssets = assets.filter { it.type != AssetType.SUELDO }
-        val customAssetsTotal = customAssets.sumOf { it.amount }
+        val customAssetsTotal = assets.sumOf { it.amount }
         val totalAssets = liquidCash + customAssetsTotal
 
         // 2. Ingresos de este mes (Filtrados del historial de movimientos)
@@ -90,7 +93,6 @@ class AssetsViewModel @Inject constructor(
 
         // 3. Egresos comprometidos de este mes
         // A. Tarjetas de crédito
-        val (cards, allDeferredPurchases) = cardsAndPurchases
         val purchasesByCard = allDeferredPurchases.groupBy { it.creditCardId }
         val totalCreditCardInstallments = cards.sumOf { card ->
             val cardPurchases = purchasesByCard[card.id] ?: emptyList()
@@ -104,7 +106,7 @@ class AssetsViewModel @Inject constructor(
 
         BalanceUiState(
             isLoading = false,
-            assets = customAssets,
+            assets = assets,
             liquidCash = liquidCash,
             totalAssets = totalAssets,
             monthlyIncomes = monthlyIncomes,
