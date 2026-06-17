@@ -24,10 +24,26 @@ class CreditCardCalculator @Inject constructor() {
         if (card.creditLimit == 0.0) 0.0
         else (card.currentDebt / card.creditLimit * 100).coerceIn(0.0, 100.0)
 
-    /** Cuota mensual de una compra diferida individual. */
+    /** Cuota mensual de una compra diferida individual (amortización de capital lineal sin interés). */
     fun installmentAmount(purchase: DeferredPurchaseEntity): Double =
         if (purchase.totalInstallments > 0) purchase.totalAmount / purchase.totalInstallments
         else 0.0
+
+    /**
+     * Cuota mensual real de una compra diferida individual, sumando la amortización a capital y los intereses sobre el saldo deudor actual.
+     * Si no tiene interés de compra, hereda el interés de la tarjeta.
+     */
+    fun installmentAmount(purchase: DeferredPurchaseEntity, cardInterestRateEA: Double?): Double {
+        val capital = installmentAmount(purchase)
+        val remainingInst = remainingInstallments(purchase)
+        if (remainingInst <= 0) return 0.0
+
+        val ea = purchase.interestRateEA ?: cardInterestRateEA ?: 0.0
+        val r = if (ea > 0.0) Math.pow(1.0 + ea / 100.0, 1.0 / 12.0) - 1.0 else 0.0
+        val remainingCapital = capital * remainingInst
+        val interest = remainingCapital * r
+        return capital + interest
+    }
 
     /** Cuotas restantes de una compra diferida. */
     fun remainingInstallments(purchase: DeferredPurchaseEntity): Int =
@@ -38,9 +54,9 @@ class CreditCardCalculator @Inject constructor() {
         installmentAmount(purchase) * remainingInstallments(purchase)
 
     /** Suma de todas las cuotas mensuales activas (lo que realmente cobra el banco cada mes). */
-    fun totalMonthlyInstallments(purchases: List<DeferredPurchaseEntity>): Double =
+    fun totalMonthlyInstallments(purchases: List<DeferredPurchaseEntity>, cardInterestRateEA: Double?): Double =
         purchases.filter { remainingInstallments(it) > 0 }
-            .sumOf { installmentAmount(it) }
+            .sumOf { installmentAmount(it, cardInterestRateEA) }
 
     /** Deuda total calculada como suma de deuda restante de todas las compras diferidas. */
     fun totalDeferredDebt(purchases: List<DeferredPurchaseEntity>): Double =
@@ -115,10 +131,11 @@ class CreditCardCalculator @Inject constructor() {
      */
     fun amountDue(
         purchase: DeferredPurchaseEntity,
+        cardInterestRateEA: Double?,
         cutoffDay: Int,
         targetDate: LocalDate
     ): Double {
-        return installmentsDue(purchase, cutoffDay, targetDate) * installmentAmount(purchase)
+        return installmentsDue(purchase, cutoffDay, targetDate) * installmentAmount(purchase, cardInterestRateEA)
     }
 
     /**
@@ -126,10 +143,11 @@ class CreditCardCalculator @Inject constructor() {
      */
     fun totalAmountDue(
         purchases: List<DeferredPurchaseEntity>,
+        cardInterestRateEA: Double?,
         cutoffDay: Int,
         targetDate: LocalDate
     ): Double {
-        return purchases.sumOf { amountDue(it, cutoffDay, targetDate) }
+        return purchases.sumOf { amountDue(it, cardInterestRateEA, cutoffDay, targetDate) }
     }
 
     /**
@@ -154,7 +172,7 @@ class CreditCardCalculator @Inject constructor() {
     fun minimumPayment(card: CreditCardEntity, deferredPurchases: List<DeferredPurchaseEntity> = emptyList()): Double {
         if (card.currentDebt <= 0.0) return 0.0
         val cutoffDate = nextBillingCutoffDate(card)
-        val amountDue = totalAmountDue(deferredPurchases, card.cutoffDay, cutoffDate)
+        val amountDue = totalAmountDue(deferredPurchases, card.interestRateEA, card.cutoffDay, cutoffDate)
         return amountDue.coerceAtMost(card.currentDebt)
     }
 

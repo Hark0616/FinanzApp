@@ -39,6 +39,9 @@ fun FinanzAppNavHost(
             DashboardScreen(
                 onNavigateToTransactions = {
                     navController.navigate(Screen.Transactions.route)
+                },
+                onNavigateToSettings = {
+                    navController.navigate(Screen.Settings.route)
                 }
             )
         }
@@ -48,11 +51,15 @@ fun FinanzAppNavHost(
         }
 
         composable(Screen.CreditCards.route) {
-            com.ivan.finanzapp.ui.creditcard.CreditCardsScreen()
+            com.ivan.finanzapp.ui.creditcard.CreditCardsScreen(navController = navController)
         }
 
         composable(Screen.Loans.route) {
             com.ivan.finanzapp.ui.loan.LoansScreen()
+        }
+
+        composable(Screen.Assets.route) {
+            com.ivan.finanzapp.ui.assets.AssetsScreen()
         }
 
         composable(Screen.Settings.route) {

@@ -54,7 +54,7 @@ class CreditCardsViewModel @Inject constructor(
                 daysUntilDue = calculator.daysUntilPaymentDue(card),
                 usageLevel = calculator.usageTrafficLight(card).name,
                 deferredPurchases = cardPurchases,
-                totalMonthlyInstallments = calculator.totalMonthlyInstallments(cardPurchases),
+                totalMonthlyInstallments = calculator.totalMonthlyInstallments(cardPurchases, card.interestRateEA),
                 activeDeferredCount = cardPurchases.count { calculator.remainingInstallments(it) > 0 }
             )
         }
@@ -78,7 +78,8 @@ class CreditCardsViewModel @Inject constructor(
         totalAmount: Double,
         totalInstallments: Int,
         paidInstallments: Int,
-        purchaseDate: Long
+        purchaseDate: Long,
+        interestRateEA: Double? = null
     ) {
         viewModelScope.launch {
             val purchase = DeferredPurchaseEntity(
@@ -88,7 +89,8 @@ class CreditCardsViewModel @Inject constructor(
                 totalAmount = totalAmount,
                 totalInstallments = totalInstallments,
                 paidInstallments = paidInstallments,
-                purchaseDate = purchaseDate
+                purchaseDate = purchaseDate,
+                interestRateEA = interestRateEA
             )
             deferredPurchaseDao.upsert(purchase)
             recalculateCardDebt(cardId)
@@ -176,7 +178,8 @@ class CreditCardsViewModel @Inject constructor(
         totalAmount: Double,
         totalInstallments: Int,
         paidInstallments: Int,
-        purchaseDate: Long
+        purchaseDate: Long,
+        interestRateEA: Double?
     ) {
         viewModelScope.launch {
             val purchase = DeferredPurchaseEntity(
@@ -186,7 +189,8 @@ class CreditCardsViewModel @Inject constructor(
                 totalAmount = totalAmount,
                 totalInstallments = totalInstallments,
                 paidInstallments = paidInstallments,
-                purchaseDate = purchaseDate
+                purchaseDate = purchaseDate,
+                interestRateEA = interestRateEA
             )
             deferredPurchaseDao.upsert(purchase)
             recalculateCardDebt(cardId)

@@ -90,7 +90,7 @@ class DashboardViewModel @Inject constructor(
                 daysUntilDue = calculator.daysUntilPaymentDue(card),
                 usageLevel = calculator.usageTrafficLight(card).name,
                 deferredPurchases = cardPurchases,
-                totalMonthlyInstallments = calculator.totalMonthlyInstallments(cardPurchases),
+                totalMonthlyInstallments = calculator.totalMonthlyInstallments(cardPurchases, card.interestRateEA),
                 activeDeferredCount = cardPurchases.count { calculator.remainingInstallments(it) > 0 }
             )
         }

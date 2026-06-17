@@ -29,5 +29,6 @@ data class DeferredPurchaseEntity(
     val totalInstallments: Int,          // Cuotas totales pactadas (ej: 36)
     val paidInstallments: Int,           // Cuotas ya pagadas (ej: 12)
     val purchaseDate: Long = System.currentTimeMillis(),
+    val interestRateEA: Double? = null,  // Tasa de interés efectiva anual de esta compra
     val createdAt: Long = System.currentTimeMillis()
 )

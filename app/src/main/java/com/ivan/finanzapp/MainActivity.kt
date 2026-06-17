@@ -18,6 +18,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ivan.finanzapp.ui.navigation.FinanzAppNavHost
+import com.ivan.finanzapp.ui.navigation.Screen
 import com.ivan.finanzapp.ui.navigation.bottomNavScreens
 import com.ivan.finanzapp.ui.theme.FinanzAppTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -46,12 +47,20 @@ class MainActivity : ComponentActivity() {
                                         it.route == screen.route
                                     } == true,
                                     onClick = {
-                                        navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
+                                        val isSelected = currentDestination?.hierarchy?.any {
+                                            it.route == screen.route
+                                        } == true
+                                        
+                                        if (isSelected) {
+                                            navController.currentBackStackEntry?.savedStateHandle?.set("reset_root", true)
+                                        } else {
+                                            navController.navigate(screen.route) {
+                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = false
                                             }
-                                            launchSingleTop = true
-                                            restoreState = true
                                         }
                                     }
                                 )

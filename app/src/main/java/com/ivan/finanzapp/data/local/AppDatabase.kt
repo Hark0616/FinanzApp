@@ -21,6 +21,8 @@ import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.MerchantCategoryMappingEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
+import com.ivan.finanzapp.data.local.entity.AssetEntity
+import com.ivan.finanzapp.data.local.dao.AssetDao
 import net.sqlcipher.database.SupportFactory
 
 @Database(
@@ -31,9 +33,10 @@ import net.sqlcipher.database.SupportFactory
         TransactionEntity::class,
         MerchantCategoryMappingEntity::class,
         LoanEntity::class,
-        DeferredPurchaseEntity::class
+        DeferredPurchaseEntity::class,
+        AssetEntity::class
     ],
-    version = 3,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -46,6 +49,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
     abstract fun loanDao(): LoanDao
     abstract fun deferredPurchaseDao(): DeferredPurchaseDao
+    abstract fun assetDao(): AssetDao
 
 
     companion object {

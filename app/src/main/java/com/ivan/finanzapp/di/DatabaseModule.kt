@@ -4,6 +4,7 @@ import android.content.Context
 import com.ivan.finanzapp.data.local.AppDatabase
 import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.local.dao.AccountDao
+import com.ivan.finanzapp.data.local.dao.AssetDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
@@ -57,4 +58,7 @@ object DatabaseModule {
 
     @Provides
     fun provideDeferredPurchaseDao(db: AppDatabase): DeferredPurchaseDao = db.deferredPurchaseDao()
+
+    @Provides
+    fun provideAssetDao(db: AppDatabase): AssetDao = db.assetDao()
 }
