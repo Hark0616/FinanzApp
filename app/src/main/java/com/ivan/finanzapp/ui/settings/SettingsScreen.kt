@@ -2,6 +2,7 @@ package com.ivan.finanzapp.ui.settings
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.ui.components.SectionTitle
 import com.ivan.finanzapp.ui.components.formatCOP
@@ -305,7 +307,7 @@ private fun DeviceOptimizationGuideCard() {
                                 "3. Abre la pantalla de apps recientes, mantén pulsado el ícono de la app y selecciona 'Mantener abierta' para evitar que el sistema la cierre.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
-                        modifier = Modifier.padding(left = 12.dp, bottom = 8.dp)
+                        modifier = Modifier.padding(start = 12.dp, bottom = 8.dp)
                     )
 
                     Text(
@@ -321,7 +323,7 @@ private fun DeviceOptimizationGuideCard() {
                                 "4. Abre la app, ve a la vista de apps recientes, mantén presionado FinanzApp y pulsa el ícono de candado.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
-                        modifier = Modifier.padding(left = 12.dp)
+                        modifier = Modifier.padding(start = 12.dp)
                     )
                 }
             }

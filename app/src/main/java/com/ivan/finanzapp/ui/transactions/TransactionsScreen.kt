@@ -24,6 +24,7 @@ import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.components.AmountText
 import com.ivan.finanzapp.ui.components.CategoryChip
 import com.ivan.finanzapp.ui.components.SectionTitle
+import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.dashboard.TransactionWithCategory
 import com.ivan.finanzapp.ui.theme.TrafficYellow
 import java.time.Instant
