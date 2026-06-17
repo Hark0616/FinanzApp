@@ -12,11 +12,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ivan.finanzapp.data.local.entity.AccountEntity
+import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.ui.components.SectionTitle
 import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.components.formatPercentage
@@ -41,6 +45,7 @@ fun CreditCardsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedForPayment by remember { mutableStateOf<CreditCardSummary?>(null) }
+    var selectedForDeferredPurchase by remember { mutableStateOf<CreditCardSummary?>(null) }
 
     Scaffold { innerPadding ->
         if (state.isLoading) {
@@ -74,7 +79,14 @@ fun CreditCardsScreen(
                     items(state.creditCards, key = { it.card.id }) { cardSummary ->
                         PhysicalLikeCreditCard(
                             summary = cardSummary,
-                            onPayClick = { selectedForPayment = cardSummary }
+                            onPayClick = { selectedForPayment = cardSummary },
+                            onAddDeferredClick = { selectedForDeferredPurchase = cardSummary },
+                            onDeletePurchaseClick = { purchaseId ->
+                                viewModel.deleteDeferredPurchase(purchaseId, cardSummary.card.id)
+                            },
+                            onMarkPaidClick = { purchaseId ->
+                                viewModel.markInstallmentPaid(purchaseId, cardSummary.card.id)
+                            }
                         )
                     }
                 }
@@ -93,13 +105,29 @@ fun CreditCardsScreen(
                 }
             )
         }
+
+        // Diálogo para Agregar Compra Diferida
+        selectedForDeferredPurchase?.let { summary ->
+            AddDeferredPurchaseDialog(
+                cardSummary = summary,
+                onDismiss = { selectedForDeferredPurchase = null },
+                onConfirm = { desc, amount, totalInst, paidInst ->
+                    viewModel.addDeferredPurchase(summary.card.id, desc, amount, totalInst, paidInst)
+                    selectedForDeferredPurchase = null
+                }
+            )
+        }
     }
 }
+
 
 @Composable
 private fun PhysicalLikeCreditCard(
     summary: CreditCardSummary,
-    onPayClick: () -> Unit
+    onPayClick: () -> Unit,
+    onAddDeferredClick: () -> Unit,
+    onDeletePurchaseClick: (String) -> Unit,
+    onMarkPaidClick: (String) -> Unit
 ) {
     val gradientColors = when (summary.usageLevel) {
         "LOW" -> listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))
@@ -253,6 +281,74 @@ private fun PhysicalLikeCreditCard(
                     Text("Registrar Abono / Pago", fontWeight = FontWeight.Bold)
                 }
             }
+
+            var deferredExpanded by remember { mutableStateOf(false) }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+            Spacer(Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { deferredExpanded = !deferredExpanded }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.rotate(if (deferredExpanded) 0f else -90f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Compras Diferidas (${summary.activeDeferredCount} activas)",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+
+                IconButton(
+                    onClick = onAddDeferredClick,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Agregar compra diferida",
+                        tint = Color.White
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = deferredExpanded) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    if (summary.deferredPurchases.isEmpty()) {
+                        Text(
+                            text = "No tienes compras diferidas en esta tarjeta. Agrégalas presionando el botón '+'.",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    } else {
+                        summary.deferredPurchases.forEach { purchase ->
+                            DeferredPurchaseItem(
+                                purchase = purchase,
+                                onMarkPaid = onMarkPaidClick,
+                                onDelete = onDeletePurchaseClick
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -390,3 +486,197 @@ private fun EmptyCardsCard() {
         )
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddDeferredPurchaseDialog(
+    cardSummary: CreditCardSummary,
+    onDismiss: () -> Unit,
+    onConfirm: (description: String, totalAmount: Double, totalInstallments: Int, paidInstallments: Int) -> Unit
+) {
+    var description by remember { mutableStateOf("") }
+    var totalAmount by remember { mutableStateOf("") }
+    var totalInstallments by remember { mutableStateOf("") }
+    var paidInstallments by remember { mutableStateOf("0") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Agregar Compra Diferida") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Agrega una compra a cuotas activa en la tarjeta \"${cardSummary.account.name}\". " +
+                            "La deuda de esta compra se sumará a la deuda total de la tarjeta.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Descripción") },
+                    placeholder = { Text("Ej. Televisor, Ropa Zara, etc.") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = totalAmount,
+                    onValueChange = { totalAmount = it },
+                    label = { Text("Monto Total ($)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = totalInstallments,
+                        onValueChange = { totalInstallments = it },
+                        label = { Text("Cuotas Totales") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+
+                    OutlinedTextField(
+                        value = paidInstallments,
+                        onValueChange = { paidInstallments = it },
+                        label = { Text("Cuotas Pagadas") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            val amountVal = totalAmount.toDoubleOrNull() ?: 0.0
+            val totalInstVal = totalInstallments.toIntOrNull() ?: 0
+            val paidInstVal = paidInstallments.toIntOrNull() ?: 0
+            val isValid = description.isNotBlank() &&
+                    amountVal > 0.0 &&
+                    totalInstVal > 0 &&
+                    paidInstVal >= 0 &&
+                    paidInstVal <= totalInstVal
+
+            Button(
+                onClick = {
+                    onConfirm(description, amountVal, totalInstVal, paidInstVal)
+                },
+                enabled = isValid
+            ) {
+                Text("Guardar Compra")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}
+
+@Composable
+private fun DeferredPurchaseItem(
+    purchase: DeferredPurchaseEntity,
+    onMarkPaid: (String) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = purchase.description,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { onMarkPaid(purchase.id) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Marcar cuota pagada",
+                            tint = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
+                    IconButton(
+                        onClick = { onDelete(purchase.id) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Eliminar",
+                            tint = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    text = "Total: ${formatCOP(purchase.totalAmount)} (${purchase.totalInstallments} cuotas)",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 12.sp
+                )
+                val installment = if (purchase.totalInstallments > 0) purchase.totalAmount / purchase.totalInstallments else 0.0
+                Text(
+                    text = "Cuota: ${formatCOP(installment)}",
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            val remaining = (purchase.totalInstallments - purchase.paidInstallments).coerceAtLeast(0)
+            val progress = if (purchase.totalInstallments > 0) purchase.paidInstallments.toFloat() / purchase.totalInstallments else 0f
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp),
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.2f)
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    text = "Pagadas: ${purchase.paidInstallments}/${purchase.totalInstallments} (Faltan: $remaining)",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 11.sp
+                )
+                val installment = if (purchase.totalInstallments > 0) purchase.totalAmount / purchase.totalInstallments else 0.0
+                val remainingDebt = installment * remaining
+                Text(
+                    text = "Restante: ${formatCOP(remainingDebt)}",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+

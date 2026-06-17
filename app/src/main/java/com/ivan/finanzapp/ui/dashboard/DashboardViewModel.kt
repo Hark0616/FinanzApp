@@ -8,7 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
-import com.ivan.finanzapp.data.local.dao.TransactionDao
+import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
+import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.model.TransactionType
@@ -31,6 +32,7 @@ class DashboardViewModel @Inject constructor(
     private val creditCardDao: CreditCardDao,
     private val categoryDao: CategoryDao,
     private val transactionDao: TransactionDao,
+    private val deferredPurchaseDao: DeferredPurchaseDao,
     private val calculator: CreditCardCalculator
 ) : ViewModel() {
 
@@ -51,14 +53,18 @@ class DashboardViewModel @Inject constructor(
 
     val uiState: StateFlow<DashboardUiState> = combine(
         accountDao.observeAccounts(),
-        creditCardDao.observeAll(),
+        combine(creditCardDao.observeAll(), deferredPurchaseDao.observeAll()) { cards, purchases ->
+            cards to purchases
+        },
         categoryDao.observeAll(),
         transactionDao.observeAll(),
         transactionDao.observeSpendingByCategory(monthStart, monthEnd)
-    ) { accounts, cards, categories, transactions, spending ->
+    ) { accounts, cardsAndPurchases, categories, transactions, spending ->
 
+        val (cards, allDeferredPurchases) = cardsAndPurchases
         val categoryMap = categories.associateBy { it.id }
         val accountMap = accounts.associateBy { it.id }
+        val purchasesByCard = allDeferredPurchases.groupBy { it.creditCardId }
 
         // Balance total: suma de cuentas de ahorros/billeteras (no TC)
         val totalBalance = accounts
@@ -73,16 +79,21 @@ class DashboardViewModel @Inject constructor(
         // Resumen de tarjetas de crédito
         val cardSummaries = cards.mapNotNull { card ->
             val account = accountMap[card.accountId] ?: return@mapNotNull null
+            val cardPurchases = purchasesByCard[card.id] ?: emptyList()
             CreditCardSummary(
                 card = card,
                 account = account,
                 availableCredit = calculator.availableCredit(card),
                 usagePercentage = calculator.usagePercentage(card),
-                minimumPayment = calculator.minimumPayment(card),
+                minimumPayment = calculator.minimumPayment(card, cardPurchases),
                 daysUntilDue = calculator.daysUntilPaymentDue(card),
-                usageLevel = calculator.usageTrafficLight(card).name
+                usageLevel = calculator.usageTrafficLight(card).name,
+                deferredPurchases = cardPurchases,
+                totalMonthlyInstallments = calculator.totalMonthlyInstallments(cardPurchases),
+                activeDeferredCount = cardPurchases.count { calculator.remainingInstallments(it) > 0 }
             )
         }
+
 
         // Últimas 5 transacciones
         val recentTransactions = transactions.take(5).map { tx ->

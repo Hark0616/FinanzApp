@@ -6,6 +6,7 @@ import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
+import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
@@ -53,4 +54,7 @@ object DatabaseModule {
 
     @Provides
     fun provideLoanDao(db: AppDatabase): LoanDao = db.loanDao()
+
+    @Provides
+    fun provideDeferredPurchaseDao(db: AppDatabase): DeferredPurchaseDao = db.deferredPurchaseDao()
 }

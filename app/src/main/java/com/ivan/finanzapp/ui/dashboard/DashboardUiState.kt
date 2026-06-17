@@ -3,6 +3,7 @@ package com.ivan.finanzapp.ui.dashboard
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.CategoryEntity
 import com.ivan.finanzapp.data.local.entity.CreditCardEntity
+import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 
 /**
@@ -36,7 +37,10 @@ data class CreditCardSummary(
     val minimumPayment: Double,
     val daysUntilDue: Int,
     /** "LOW" | "MEDIUM" | "HIGH" */
-    val usageLevel: String
+    val usageLevel: String,
+    val deferredPurchases: List<DeferredPurchaseEntity> = emptyList(),
+    val totalMonthlyInstallments: Double = 0.0,
+    val activeDeferredCount: Int = 0
 )
 
 data class TransactionWithCategory(

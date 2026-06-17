@@ -1,6 +1,7 @@
 package com.ivan.finanzapp.domain.calculator
 
 import com.ivan.finanzapp.data.local.entity.CreditCardEntity
+import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,18 +22,46 @@ class CreditCardCalculator @Inject constructor() {
         if (card.creditLimit == 0.0) 0.0
         else (card.currentDebt / card.creditLimit * 100).coerceIn(0.0, 100.0)
 
+    /** Cuota mensual de una compra diferida individual. */
+    fun installmentAmount(purchase: DeferredPurchaseEntity): Double =
+        if (purchase.totalInstallments > 0) purchase.totalAmount / purchase.totalInstallments
+        else 0.0
+
+    /** Cuotas restantes de una compra diferida. */
+    fun remainingInstallments(purchase: DeferredPurchaseEntity): Int =
+        (purchase.totalInstallments - purchase.paidInstallments).coerceAtLeast(0)
+
+    /** Deuda restante de una compra diferida individual. */
+    fun remainingDebt(purchase: DeferredPurchaseEntity): Double =
+        installmentAmount(purchase) * remainingInstallments(purchase)
+
+    /** Suma de todas las cuotas mensuales activas (lo que realmente cobra el banco cada mes). */
+    fun totalMonthlyInstallments(purchases: List<DeferredPurchaseEntity>): Double =
+        purchases.filter { remainingInstallments(it) > 0 }
+            .sumOf { installmentAmount(it) }
+
+    /** Deuda total calculada como suma de deuda restante de todas las compras diferidas. */
+    fun totalDeferredDebt(purchases: List<DeferredPurchaseEntity>): Double =
+        purchases.sumOf { remainingDebt(it) }
+
     /**
      * Pago mínimo requerido.
      * Es el mayor valor entre:
      * - El porcentaje mínimo configurado sobre la deuda actual.
      * - El piso mínimo en pesos (si está configurado).
      * - 0 si no hay deuda.
+     * Si hay compras diferidas, se usa la suma de las cuotas mensuales como pago mínimo real.
      */
-    fun minimumPayment(card: CreditCardEntity): Double {
+    fun minimumPayment(card: CreditCardEntity, deferredPurchases: List<DeferredPurchaseEntity> = emptyList()): Double {
         if (card.currentDebt <= 0.0) return 0.0
+        val deferredMonthly = totalMonthlyInstallments(deferredPurchases)
+        if (deferredMonthly > 0.0) {
+            return deferredMonthly.coerceAtMost(card.currentDebt)
+        }
         val byPercentage = card.currentDebt * (card.minPaymentPercentage / 100.0)
         return maxOf(byPercentage, card.minPaymentFloor).coerceAtMost(card.currentDebt)
     }
+
 
     /**
      * Calcula los días que faltan para la próxima fecha de pago,

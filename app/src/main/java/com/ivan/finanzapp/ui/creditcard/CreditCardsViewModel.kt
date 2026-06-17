@@ -6,6 +6,8 @@ import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.CreditCardEntity
+import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
+import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
@@ -15,6 +17,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -25,25 +28,34 @@ class CreditCardsViewModel @Inject constructor(
     private val creditCardDao: CreditCardDao,
     private val accountDao: AccountDao,
     private val transactionDao: TransactionDao,
+    private val deferredPurchaseDao: DeferredPurchaseDao,
     private val calculator: CreditCardCalculator
 ) : ViewModel() {
 
     val uiState: StateFlow<CreditCardsUiState> = combine(
-        creditCardDao.observeAll(),
+        combine(creditCardDao.observeAll(), deferredPurchaseDao.observeAll()) { cards, purchases ->
+            cards to purchases
+        },
         accountDao.observeAccounts()
-    ) { cards, accounts ->
+    ) { cardsAndPurchases, accounts ->
+        val (cards, allDeferredPurchases) = cardsAndPurchases
         val accountMap = accounts.associateBy { it.id }
+        val purchasesByCard = allDeferredPurchases.groupBy { it.creditCardId }
 
         val cardSummaries = cards.mapNotNull { card ->
             val account = accountMap[card.accountId] ?: return@mapNotNull null
+            val cardPurchases = purchasesByCard[card.id] ?: emptyList()
             CreditCardSummary(
                 card = card,
                 account = account,
                 availableCredit = calculator.availableCredit(card),
                 usagePercentage = calculator.usagePercentage(card),
-                minimumPayment = calculator.minimumPayment(card),
+                minimumPayment = calculator.minimumPayment(card, cardPurchases),
                 daysUntilDue = calculator.daysUntilPaymentDue(card),
-                usageLevel = calculator.usageTrafficLight(card).name
+                usageLevel = calculator.usageTrafficLight(card).name,
+                deferredPurchases = cardPurchases,
+                totalMonthlyInstallments = calculator.totalMonthlyInstallments(cardPurchases),
+                activeDeferredCount = cardPurchases.count { calculator.remainingInstallments(it) > 0 }
             )
         }
 
@@ -59,6 +71,51 @@ class CreditCardsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = CreditCardsUiState()
     )
+
+    fun addDeferredPurchase(
+        cardId: String,
+        description: String,
+        totalAmount: Double,
+        totalInstallments: Int,
+        paidInstallments: Int
+    ) {
+        viewModelScope.launch {
+            val purchase = DeferredPurchaseEntity(
+                id = UUID.randomUUID().toString(),
+                creditCardId = cardId,
+                description = description,
+                totalAmount = totalAmount,
+                totalInstallments = totalInstallments,
+                paidInstallments = paidInstallments
+            )
+            deferredPurchaseDao.upsert(purchase)
+            recalculateCardDebt(cardId)
+        }
+    }
+
+    fun deleteDeferredPurchase(purchaseId: String, cardId: String) {
+        viewModelScope.launch {
+            deferredPurchaseDao.delete(purchaseId)
+            recalculateCardDebt(cardId)
+        }
+    }
+
+    fun markInstallmentPaid(purchaseId: String, cardId: String) {
+        viewModelScope.launch {
+            deferredPurchaseDao.incrementPaidInstallment(purchaseId)
+            deferredPurchaseDao.deleteIfFullyPaid(purchaseId)
+            recalculateCardDebt(cardId)
+        }
+    }
+
+    private suspend fun recalculateCardDebt(cardId: String) {
+        val purchases = deferredPurchaseDao.observeByCardId(cardId).first()
+        val card = creditCardDao.observeAll().first().find { it.id == cardId } ?: return
+        val newDebt = calculator.totalDeferredDebt(purchases)
+        val updatedCard = card.copy(currentDebt = newDebt)
+        creditCardDao.update(updatedCard)
+    }
+
 
     fun payCreditCard(card: CreditCardEntity, paymentAmount: Double, fundingAccountId: String?) {
         viewModelScope.launch {

@@ -471,6 +471,11 @@ private fun AddAccountDialog(
             }
         },
         confirmButton = {
+            val isBalanceValid = initialBalance.isBlank() || initialBalance.toDoubleOrNull() != null
+            val isLimitValid = if (type == AccountType.TARJETA_CREDITO) {
+                (creditLimit.toDoubleOrNull() ?: 0.0) > 0.0
+            } else true
+
             Button(
                 onClick = {
                     val balance = initialBalance.toDoubleOrNull() ?: 0.0
@@ -483,7 +488,7 @@ private fun AddAccountDialog(
                         onConfirm(name, type, balance, limit, cutoff, due, ea)
                     }
                 },
-                enabled = name.isNotBlank() && initialBalance.toDoubleOrNull() != null
+                enabled = name.isNotBlank() && isBalanceValid && isLimitValid
             ) {
                 Text("Guardar")
             }
