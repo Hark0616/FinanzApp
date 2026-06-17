@@ -33,7 +33,7 @@ import net.sqlcipher.database.SupportFactory
         LoanEntity::class,
         DeferredPurchaseEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)

@@ -2,7 +2,9 @@ package com.ivan.finanzapp.domain.calculator
 
 import com.ivan.finanzapp.data.local.entity.CreditCardEntity
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -45,14 +47,115 @@ class CreditCardCalculator @Inject constructor() {
         purchases.sumOf { remainingDebt(it) }
 
     /**
+     * Calcula la fecha del primer corte de facturación después de la fecha dada.
+     */
+    fun firstCutoffAfter(date: LocalDate, cutoffDay: Int): LocalDate {
+        val length = date.month.length(date.isLeapYear)
+        val day = cutoffDay.coerceAtMost(length)
+        var cutoff = LocalDate.of(date.year, date.month, day)
+        if (date.isAfter(cutoff)) {
+            val nextMonth = date.plusMonths(1)
+            val nextLength = nextMonth.month.length(nextMonth.isLeapYear)
+            cutoff = LocalDate.of(nextMonth.year, nextMonth.month, cutoffDay.coerceAtMost(nextLength))
+        }
+        return cutoff
+    }
+
+    /**
+     * Calcula cuántas cuotas de una compra ya han sido facturadas hasta una fecha determinada [targetDate],
+     * basándose en el día de corte de la tarjeta.
+     */
+    fun billedInstallments(
+        purchaseDate: LocalDate,
+        cutoffDay: Int,
+        targetDate: LocalDate,
+        totalInstallments: Int
+    ): Int {
+        if (purchaseDate.isAfter(targetDate)) return 0
+
+        var count = 0
+        var currentCutoff = firstCutoffAfter(purchaseDate, cutoffDay)
+
+        while (!currentCutoff.isAfter(targetDate) && count < totalInstallments) {
+            count++
+            currentCutoff = currentCutoff.plusMonths(1)
+        }
+        return count
+    }
+
+    /**
+     * Método de conveniencia que convierte purchaseDate (Long) a LocalDate y calcula las cuotas facturadas.
+     */
+    fun billedInstallments(
+        purchase: DeferredPurchaseEntity,
+        cutoffDay: Int,
+        targetDate: LocalDate
+    ): Int {
+        val pDate = Instant.ofEpochMilli(purchase.purchaseDate)
+            .atZone(ZoneId.systemDefault())
+            .toLocalDate()
+        return billedInstallments(pDate, cutoffDay, targetDate, purchase.totalInstallments)
+    }
+
+    /**
+     * Calcula cuántas cuotas están pendientes de pago para el ciclo actual (hasta [targetDate]),
+     * comparando las cuotas facturadas con las cuotas ya pagadas.
+     */
+    fun installmentsDue(
+        purchase: DeferredPurchaseEntity,
+        cutoffDay: Int,
+        targetDate: LocalDate
+    ): Int {
+        val billed = billedInstallments(purchase, cutoffDay, targetDate)
+        return (billed - purchase.paidInstallments).coerceIn(0, purchase.totalInstallments - purchase.paidInstallments)
+    }
+
+    /**
+     * Valor a pagar para esta compra diferida en el periodo de facturación actual.
+     */
+    fun amountDue(
+        purchase: DeferredPurchaseEntity,
+        cutoffDay: Int,
+        targetDate: LocalDate
+    ): Double {
+        return installmentsDue(purchase, cutoffDay, targetDate) * installmentAmount(purchase)
+    }
+
+    /**
+     * Suma de todos los valores a pagar en el periodo actual.
+     */
+    fun totalAmountDue(
+        purchases: List<DeferredPurchaseEntity>,
+        cutoffDay: Int,
+        targetDate: LocalDate
+    ): Double {
+        return purchases.sumOf { amountDue(it, cutoffDay, targetDate) }
+    }
+
+    /**
+     * Encuentra la fecha de corte de facturación correspondiente al próximo pago.
+     */
+    fun nextBillingCutoffDate(card: CreditCardEntity): LocalDate {
+        val nextPayment = nextPaymentDueDate(card)
+        return if (card.cutoffDay < card.paymentDueDay) {
+            val day = card.cutoffDay.coerceAtMost(nextPayment.month.length(nextPayment.isLeapYear))
+            LocalDate.of(nextPayment.year, nextPayment.month, day)
+        } else {
+            val prevMonth = nextPayment.minusMonths(1)
+            val day = card.cutoffDay.coerceAtMost(prevMonth.month.length(prevMonth.isLeapYear))
+            LocalDate.of(prevMonth.year, prevMonth.month, day)
+        }
+    }
+
+    /**
      * Pago mínimo requerido.
-     * Se calcula como la suma de las cuotas mensuales de las compras diferidas activas.
-     * Si no hay compras diferidas, el pago mínimo es $0.
+     * Es la suma de las cuotas que corresponden al periodo de facturación actual (al corte actual).
      */
     fun minimumPayment(card: CreditCardEntity, deferredPurchases: List<DeferredPurchaseEntity> = emptyList()): Double {
         if (card.currentDebt <= 0.0) return 0.0
-        val deferredMonthly = totalMonthlyInstallments(deferredPurchases)
-        return deferredMonthly.coerceAtMost(card.currentDebt)
+        val cutoffDate = nextBillingCutoffDate(card)
+        val amountDue = totalAmountDue(deferredPurchases, card.cutoffDay, cutoffDate)
+        return amountDue.coerceAtMost(card.currentDebt)
     }
 
 

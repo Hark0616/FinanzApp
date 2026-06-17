@@ -160,8 +160,9 @@ class TransactionProcessor @Inject constructor(
                     registerDeferredPurchaseFromNotification(
                         accountId = accountId,
                         transactionId = id,
-                        merchant = transaction.merchant,
-                        amount = transaction.amount
+                        merchant = transaction.merchant ?: "Comercio desconocido",
+                        amount = transaction.amount,
+                        purchaseDate = postedAtMillis
                     )
                 }
                 TransactionType.PAGO_TC -> {
@@ -176,7 +177,8 @@ class TransactionProcessor @Inject constructor(
         accountId: String,
         transactionId: String,
         merchant: String,
-        amount: Double
+        amount: Double,
+        purchaseDate: Long
     ) {
         val card = creditCardDao.getByAccountId(accountId) ?: return
         val purchase = DeferredPurchaseEntity(
@@ -185,7 +187,8 @@ class TransactionProcessor @Inject constructor(
             description = merchant,
             totalAmount = amount,
             totalInstallments = 1,
-            paidInstallments = 0
+            paidInstallments = 0,
+            purchaseDate = purchaseDate
         )
         deferredPurchaseDao.upsert(purchase)
         recalculateCardDebt(card.id)

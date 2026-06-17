@@ -77,7 +77,8 @@ class CreditCardsViewModel @Inject constructor(
         description: String,
         totalAmount: Double,
         totalInstallments: Int,
-        paidInstallments: Int
+        paidInstallments: Int,
+        purchaseDate: Long
     ) {
         viewModelScope.launch {
             val purchase = DeferredPurchaseEntity(
@@ -86,7 +87,8 @@ class CreditCardsViewModel @Inject constructor(
                 description = description,
                 totalAmount = totalAmount,
                 totalInstallments = totalInstallments,
-                paidInstallments = paidInstallments
+                paidInstallments = paidInstallments,
+                purchaseDate = purchaseDate
             )
             deferredPurchaseDao.upsert(purchase)
             recalculateCardDebt(cardId)
@@ -173,7 +175,8 @@ class CreditCardsViewModel @Inject constructor(
         description: String,
         totalAmount: Double,
         totalInstallments: Int,
-        paidInstallments: Int
+        paidInstallments: Int,
+        purchaseDate: Long
     ) {
         viewModelScope.launch {
             val purchase = DeferredPurchaseEntity(
@@ -182,7 +185,8 @@ class CreditCardsViewModel @Inject constructor(
                 description = description,
                 totalAmount = totalAmount,
                 totalInstallments = totalInstallments,
-                paidInstallments = paidInstallments
+                paidInstallments = paidInstallments,
+                purchaseDate = purchaseDate
             )
             deferredPurchaseDao.upsert(purchase)
             recalculateCardDebt(cardId)

@@ -28,5 +28,6 @@ data class DeferredPurchaseEntity(
     val totalAmount: Double,             // Monto total de la compra (ej: 3,600,000)
     val totalInstallments: Int,          // Cuotas totales pactadas (ej: 36)
     val paidInstallments: Int,           // Cuotas ya pagadas (ej: 12)
+    val purchaseDate: Long = System.currentTimeMillis(),
     val createdAt: Long = System.currentTimeMillis()
 )

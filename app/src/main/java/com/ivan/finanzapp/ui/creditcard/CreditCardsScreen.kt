@@ -28,9 +28,18 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import android.app.DatePickerDialog
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
+import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
+import java.time.Instant
+import java.time.ZoneId
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import com.ivan.finanzapp.ui.components.SectionTitle
 import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.components.formatPercentage
@@ -116,8 +125,8 @@ fun CreditCardsScreen(
             AddDeferredPurchaseDialog(
                 cardSummary = summary,
                 onDismiss = { selectedForDeferredPurchase = null },
-                onConfirm = { desc, amount, totalInst, paidInst ->
-                    viewModel.addDeferredPurchase(summary.card.id, desc, amount, totalInst, paidInst)
+                onConfirm = { desc, amount, totalInst, paidInst, dateLong ->
+                    viewModel.addDeferredPurchase(summary.card.id, desc, amount, totalInst, paidInst, dateLong)
                     selectedForDeferredPurchase = null
                 }
             )
@@ -127,15 +136,17 @@ fun CreditCardsScreen(
         editingDeferredPurchase?.let { (summary, purchase) ->
             EditDeferredPurchaseDialog(
                 purchase = purchase,
+                cardSummary = summary,
                 onDismiss = { editingDeferredPurchase = null },
-                onConfirm = { desc, amount, totalInst, paidInst ->
+                onConfirm = { desc, amount, totalInst, paidInst, dateLong ->
                     viewModel.updateDeferredPurchase(
                         purchaseId = purchase.id,
                         cardId = summary.card.id,
                         description = desc,
                         totalAmount = amount,
                         totalInstallments = totalInst,
-                        paidInstallments = paidInst
+                        paidInstallments = paidInst,
+                        purchaseDate = dateLong
                     )
                     editingDeferredPurchase = null
                 }
@@ -154,6 +165,9 @@ private fun PhysicalLikeCreditCard(
     onMarkPaidClick: (String) -> Unit,
     onEditPurchaseClick: (DeferredPurchaseEntity) -> Unit
 ) {
+    val calculator = remember { CreditCardCalculator() }
+    val nextBillingCutoff = remember(summary.card) { calculator.nextBillingCutoffDate(summary.card) }
+
     val gradientColors = when (summary.usageLevel) {
         "LOW" -> listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))
         "MEDIUM" -> listOf(Color(0xFF373B44), Color(0xFF4286f4))
@@ -367,6 +381,8 @@ private fun PhysicalLikeCreditCard(
                         summary.deferredPurchases.forEach { purchase ->
                             DeferredPurchaseItem(
                                 purchase = purchase,
+                                cutoffDay = summary.card.cutoffDay,
+                                nextBillingCutoff = nextBillingCutoff,
                                 onMarkPaid = onMarkPaidClick,
                                 onDelete = onDeletePurchaseClick,
                                 onEdit = onEditPurchaseClick
@@ -518,12 +534,32 @@ private fun EmptyCardsCard() {
 private fun AddDeferredPurchaseDialog(
     cardSummary: CreditCardSummary,
     onDismiss: () -> Unit,
-    onConfirm: (description: String, totalAmount: Double, totalInstallments: Int, paidInstallments: Int) -> Unit
+    onConfirm: (description: String, totalAmount: Double, totalInstallments: Int, paidInstallments: Int, purchaseDate: Long) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
     var totalAmount by remember { mutableStateOf("") }
     var totalInstallments by remember { mutableStateOf("") }
     var paidInstallments by remember { mutableStateOf("0") }
+    var purchaseDate by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    val context = LocalContext.current
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
+
+    fun autoComputePaid(dateLong: Long, totalInstStr: String) {
+        val totalInst = totalInstStr.toIntOrNull() ?: return
+        val today = LocalDate.now()
+        val pDate = Instant.ofEpochMilli(dateLong)
+            .atZone(ZoneId.systemDefault())
+            .toLocalDate()
+        val calculator = CreditCardCalculator()
+        val calculatedBilled = calculator.billedInstallments(
+            pDate,
+            cardSummary.card.cutoffDay,
+            today,
+            totalInst
+        )
+        paidInstallments = calculatedBilled.toString()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -563,7 +599,10 @@ private fun AddDeferredPurchaseDialog(
                 ) {
                     OutlinedTextField(
                         value = totalInstallments,
-                        onValueChange = { totalInstallments = it },
+                        onValueChange = { newValue ->
+                            totalInstallments = newValue
+                            autoComputePaid(purchaseDate, newValue)
+                        },
                         label = { Text("Cuotas Totales") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
@@ -579,6 +618,38 @@ private fun AddDeferredPurchaseDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
+
+                // Campo interactivo para la fecha de compra
+                val cal = Calendar.getInstance().apply { timeInMillis = purchaseDate }
+                val datePickerDialog = DatePickerDialog(
+                    context,
+                    { _, year, month, dayOfMonth ->
+                        val newCal = Calendar.getInstance()
+                        newCal.set(Calendar.YEAR, year)
+                        newCal.set(Calendar.MONTH, month)
+                        newCal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                        purchaseDate = newCal.timeInMillis
+                        autoComputePaid(newCal.timeInMillis, totalInstallments)
+                    },
+                    cal.get(Calendar.YEAR),
+                    cal.get(Calendar.MONTH),
+                    cal.get(Calendar.DAY_OF_MONTH)
+                )
+
+                OutlinedTextField(
+                    value = dateFormat.format(Date(purchaseDate)),
+                    onValueChange = {},
+                    label = { Text("Fecha de Compra") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { datePickerDialog.show() },
+                    enabled = false, // Deshabilitar entrada de texto para forzar el click en el DatePicker
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
             }
         },
         confirmButton = {
@@ -593,7 +664,7 @@ private fun AddDeferredPurchaseDialog(
 
             Button(
                 onClick = {
-                    onConfirm(description, amountVal, totalInstVal, paidInstVal)
+                    onConfirm(description, amountVal, totalInstVal, paidInstVal, purchaseDate)
                 },
                 enabled = isValid
             ) {
@@ -611,10 +682,17 @@ private fun AddDeferredPurchaseDialog(
 @Composable
 private fun DeferredPurchaseItem(
     purchase: DeferredPurchaseEntity,
+    cutoffDay: Int,
+    nextBillingCutoff: LocalDate,
     onMarkPaid: (String) -> Unit,
     onDelete: (String) -> Unit,
     onEdit: (DeferredPurchaseEntity) -> Unit
 ) {
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
+    val dateStr = dateFormat.format(Date(purchase.purchaseDate))
+    val calculator = remember { CreditCardCalculator() }
+    val amountDueThisMonth = calculator.amountDue(purchase, cutoffDay, nextBillingCutoff)
+
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f)),
         shape = RoundedCornerShape(12.dp),
@@ -626,12 +704,19 @@ private fun DeferredPurchaseItem(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = purchase.description,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
+                Column {
+                    Text(
+                        text = purchase.description,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = "Compra: $dateStr",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 10.sp
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = { onEdit(purchase) },
@@ -674,13 +759,21 @@ private fun DeferredPurchaseItem(
                     color = Color.White.copy(alpha = 0.7f),
                     fontSize = 12.sp
                 )
-                val installment = if (purchase.totalInstallments > 0) purchase.totalAmount / purchase.totalInstallments else 0.0
-                Text(
-                    text = "Cuota: ${formatCOP(installment)}",
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    val installment = if (purchase.totalInstallments > 0) purchase.totalAmount / purchase.totalInstallments else 0.0
+                    Text(
+                        text = "Cuota: ${formatCOP(installment)}",
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Este mes: ${formatCOP(amountDueThisMonth)}",
+                        color = if (amountDueThisMonth > 0.0) TrafficYellow else Color.White.copy(alpha = 0.6f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -721,13 +814,34 @@ private fun DeferredPurchaseItem(
 @Composable
 private fun EditDeferredPurchaseDialog(
     purchase: DeferredPurchaseEntity,
+    cardSummary: CreditCardSummary,
     onDismiss: () -> Unit,
-    onConfirm: (description: String, totalAmount: Double, totalInstallments: Int, paidInstallments: Int) -> Unit
+    onConfirm: (description: String, totalAmount: Double, totalInstallments: Int, paidInstallments: Int, purchaseDate: Long) -> Unit
 ) {
     var description by remember { mutableStateOf(purchase.description) }
     var totalAmount by remember { mutableStateOf(purchase.totalAmount.toString()) }
     var totalInstallments by remember { mutableStateOf(purchase.totalInstallments.toString()) }
     var paidInstallments by remember { mutableStateOf(purchase.paidInstallments.toString()) }
+    var purchaseDate by remember { mutableStateOf(purchase.purchaseDate) }
+
+    val context = LocalContext.current
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
+
+    fun autoComputePaid(dateLong: Long, totalInstStr: String) {
+        val totalInst = totalInstStr.toIntOrNull() ?: return
+        val today = LocalDate.now()
+        val pDate = Instant.ofEpochMilli(dateLong)
+            .atZone(ZoneId.systemDefault())
+            .toLocalDate()
+        val calculator = CreditCardCalculator()
+        val calculatedBilled = calculator.billedInstallments(
+            pDate,
+            cardSummary.card.cutoffDay,
+            today,
+            totalInst
+        )
+        paidInstallments = calculatedBilled.toString()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -765,7 +879,10 @@ private fun EditDeferredPurchaseDialog(
                 ) {
                     OutlinedTextField(
                         value = totalInstallments,
-                        onValueChange = { totalInstallments = it },
+                        onValueChange = { newValue ->
+                            totalInstallments = newValue
+                            autoComputePaid(purchaseDate, newValue)
+                        },
                         label = { Text("Cuotas Totales") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
@@ -781,6 +898,38 @@ private fun EditDeferredPurchaseDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
+
+                // Campo interactivo para la fecha de compra
+                val cal = Calendar.getInstance().apply { timeInMillis = purchaseDate }
+                val datePickerDialog = DatePickerDialog(
+                    context,
+                    { _, year, month, dayOfMonth ->
+                        val newCal = Calendar.getInstance()
+                        newCal.set(Calendar.YEAR, year)
+                        newCal.set(Calendar.MONTH, month)
+                        newCal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                        purchaseDate = newCal.timeInMillis
+                        autoComputePaid(newCal.timeInMillis, totalInstallments)
+                    },
+                    cal.get(Calendar.YEAR),
+                    cal.get(Calendar.MONTH),
+                    cal.get(Calendar.DAY_OF_MONTH)
+                )
+
+                OutlinedTextField(
+                    value = dateFormat.format(Date(purchaseDate)),
+                    onValueChange = {},
+                    label = { Text("Fecha de Compra") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { datePickerDialog.show() },
+                    enabled = false,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
             }
         },
         confirmButton = {
@@ -795,7 +944,7 @@ private fun EditDeferredPurchaseDialog(
 
             Button(
                 onClick = {
-                    onConfirm(description, amountVal, totalInstVal, paidInstVal)
+                    onConfirm(description, amountVal, totalInstVal, paidInstVal, purchaseDate)
                 },
                 enabled = isValid
             ) {
@@ -809,4 +958,3 @@ private fun EditDeferredPurchaseDialog(
         }
     )
 }
-
