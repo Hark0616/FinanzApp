@@ -16,10 +16,10 @@ val Surface = Color(0xFFF5F5F5)
 val SurfaceDark = Color(0xFF121212)
 val OnSurfaceDark = Color(0xFFE0E0E0)
 
-// Semáforo para tarjetas de crédito
-val TrafficGreen = Color(0xFF4CAF50)
-val TrafficYellow = Color(0xFFFFC107)
-val TrafficRed = Color(0xFFF44336)
+// Semáforo sobrio para tarjetas de crédito
+val TrafficGreen = Color(0xFF5A9E74)
+val TrafficYellow = Color(0xFFD3A25D)
+val TrafficRed = Color(0xFFC66969)
 
 // Categorías (referencia, se usan en los chips)
 val CatMercado = Color(0xFF4CAF50)
