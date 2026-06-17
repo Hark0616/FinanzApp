@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CreditCard
@@ -58,6 +59,11 @@ fun CreditCardsScreen(
     var selectedForPayment by remember { mutableStateOf<CreditCardSummary?>(null) }
     var selectedForDeferredPurchase by remember { mutableStateOf<CreditCardSummary?>(null) }
     var editingDeferredPurchase by remember { mutableStateOf<Pair<CreditCardSummary, DeferredPurchaseEntity>?>(null) }
+    var selectedCardIdForDetail by remember { mutableStateOf<String?>(null) }
+
+    val selectedCardSummary = remember(state.creditCards, selectedCardIdForDetail) {
+        state.creditCards.find { it.card.id == selectedCardIdForDetail }
+    }
 
     Scaffold { innerPadding ->
         if (state.isLoading) {
@@ -69,7 +75,64 @@ fun CreditCardsScreen(
             ) {
                 CircularProgressIndicator()
             }
+        } else if (selectedCardSummary != null) {
+            // Vista de DETALLE de la tarjeta seleccionada
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(16.dp)
+            ) {
+                // Cabecera de Detalle con botón para volver atrás
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    IconButton(onClick = { selectedCardIdForDetail = null }) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Volver",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = selectedCardSummary.account.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 96.dp)
+                ) {
+                    item {
+                        PhysicalLikeCreditCard(
+                            summary = selectedCardSummary,
+                            isDetailView = true,
+                            onPayClick = { selectedForPayment = selectedCardSummary },
+                            onAddDeferredClick = { selectedForDeferredPurchase = selectedCardSummary },
+                            onDeletePurchaseClick = { purchaseId ->
+                                viewModel.deleteDeferredPurchase(purchaseId, selectedCardSummary.card.id)
+                            },
+                            onMarkPaidClick = { purchaseId ->
+                                viewModel.markInstallmentPaid(purchaseId, selectedCardSummary.card.id)
+                            },
+                            onEditPurchaseClick = { purchase ->
+                                editingDeferredPurchase = selectedCardSummary to purchase
+                            }
+                        )
+                    }
+                }
+            }
         } else {
+            // Vista de LISTADO general de tarjetas
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -91,17 +154,8 @@ fun CreditCardsScreen(
                     items(state.creditCards, key = { it.card.id }) { cardSummary ->
                         PhysicalLikeCreditCard(
                             summary = cardSummary,
-                            onPayClick = { selectedForPayment = cardSummary },
-                            onAddDeferredClick = { selectedForDeferredPurchase = cardSummary },
-                            onDeletePurchaseClick = { purchaseId ->
-                                viewModel.deleteDeferredPurchase(purchaseId, cardSummary.card.id)
-                            },
-                            onMarkPaidClick = { purchaseId ->
-                                viewModel.markInstallmentPaid(purchaseId, cardSummary.card.id)
-                            },
-                            onEditPurchaseClick = { purchase ->
-                                editingDeferredPurchase = cardSummary to purchase
-                            }
+                            isDetailView = false,
+                            onCardClick = { selectedCardIdForDetail = cardSummary.card.id }
                         )
                     }
                 }
@@ -121,7 +175,7 @@ fun CreditCardsScreen(
             )
         }
 
-        // Diálogo para Agregar Compra Diferida
+        // Diálogo para Agregar Compra
         selectedForDeferredPurchase?.let { summary ->
             AddDeferredPurchaseDialog(
                 cardSummary = summary,
@@ -133,7 +187,7 @@ fun CreditCardsScreen(
             )
         }
 
-        // Diálogo para Editar Compra Diferida
+        // Diálogo para Editar Compra
         editingDeferredPurchase?.let { (summary, purchase) ->
             EditDeferredPurchaseDialog(
                 purchase = purchase,
@@ -160,11 +214,13 @@ fun CreditCardsScreen(
 @Composable
 private fun PhysicalLikeCreditCard(
     summary: CreditCardSummary,
-    onPayClick: () -> Unit,
-    onAddDeferredClick: () -> Unit,
-    onDeletePurchaseClick: (String) -> Unit,
-    onMarkPaidClick: (String) -> Unit,
-    onEditPurchaseClick: (DeferredPurchaseEntity) -> Unit
+    isDetailView: Boolean,
+    onCardClick: () -> Unit = {},
+    onPayClick: () -> Unit = {},
+    onAddDeferredClick: () -> Unit = {},
+    onDeletePurchaseClick: (String) -> Unit = {},
+    onMarkPaidClick: (String) -> Unit = {},
+    onEditPurchaseClick: (DeferredPurchaseEntity) -> Unit = {}
 ) {
     val calculator = remember { CreditCardCalculator() }
     val nextBillingCutoff = remember(summary.card) { calculator.nextBillingCutoffDate(summary.card) }
@@ -182,7 +238,11 @@ private fun PhysicalLikeCreditCard(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .let { modifier ->
+                if (!isDetailView) modifier.clickable { onCardClick() } else modifier
+            },
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(6.dp)
     ) {
@@ -310,61 +370,67 @@ private fun PhysicalLikeCreditCard(
                 }
             }
 
-            if (summary.card.currentDebt > 0.0) {
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = onPayClick,
+            if (!isDetailView) {
+                Spacer(Modifier.height(8.dp))
+                Box(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
-                    shape = RoundedCornerShape(10.dp)
+                    contentAlignment = Alignment.CenterEnd
                 ) {
-                    Text("Registrar Abono / Pago", fontWeight = FontWeight.Bold)
-                }
-            }
-
-            var deferredExpanded by remember { mutableStateOf(false) }
-
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
-            Spacer(Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { deferredExpanded = !deferredExpanded }
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.rotate(if (deferredExpanded) 0f else -90f)
-                    )
-                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Compras Diferidas (${summary.activeDeferredCount} activas)",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                }
-
-                IconButton(
-                    onClick = onAddDeferredClick,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Agregar compra diferida",
-                        tint = Color.White
+                        text = "Toca para ver detalle →",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
 
-            AnimatedVisibility(visible = deferredExpanded) {
+            if (isDetailView) {
+                if (summary.card.currentDebt > 0.0) {
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = onPayClick,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Registrar Abono / Pago", fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Compras (${summary.activeDeferredCount} activas)",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onAddDeferredClick,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Agregar compra",
+                            tint = Color.White
+                        )
+                    }
+                }
+
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
@@ -373,7 +439,7 @@ private fun PhysicalLikeCreditCard(
                 ) {
                     if (summary.deferredPurchases.isEmpty()) {
                         Text(
-                            text = "No tienes compras diferidas en esta tarjeta. Agrégalas presionando el botón '+'.",
+                            text = "No tienes compras registradas en esta tarjeta. Agrégalas presionando el botón '+'.",
                             color = Color.White.copy(alpha = 0.6f),
                             fontSize = 12.sp,
                             modifier = Modifier.padding(vertical = 8.dp)
@@ -564,7 +630,7 @@ private fun AddDeferredPurchaseDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Agregar Compra Diferida") },
+        title = { Text("Agregar Compra") },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -846,7 +912,7 @@ private fun EditDeferredPurchaseDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Editar Compra Diferida") },
+        title = { Text("Editar Compra") },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
