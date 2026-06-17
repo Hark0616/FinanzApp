@@ -46,20 +46,13 @@ class CreditCardCalculator @Inject constructor() {
 
     /**
      * Pago mínimo requerido.
-     * Es el mayor valor entre:
-     * - El porcentaje mínimo configurado sobre la deuda actual.
-     * - El piso mínimo en pesos (si está configurado).
-     * - 0 si no hay deuda.
-     * Si hay compras diferidas, se usa la suma de las cuotas mensuales como pago mínimo real.
+     * Se calcula como la suma de las cuotas mensuales de las compras diferidas activas.
+     * Si no hay compras diferidas, el pago mínimo es $0.
      */
     fun minimumPayment(card: CreditCardEntity, deferredPurchases: List<DeferredPurchaseEntity> = emptyList()): Double {
         if (card.currentDebt <= 0.0) return 0.0
         val deferredMonthly = totalMonthlyInstallments(deferredPurchases)
-        if (deferredMonthly > 0.0) {
-            return deferredMonthly.coerceAtMost(card.currentDebt)
-        }
-        val byPercentage = card.currentDebt * (card.minPaymentPercentage / 100.0)
-        return maxOf(byPercentage, card.minPaymentFloor).coerceAtMost(card.currentDebt)
+        return deferredMonthly.coerceAtMost(card.currentDebt)
     }
 
 

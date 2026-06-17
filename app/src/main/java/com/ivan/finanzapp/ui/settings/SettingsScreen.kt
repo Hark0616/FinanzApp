@@ -410,16 +410,17 @@ private fun AddAccountDialog(
                     }
                 }
 
-                item {
-                    val label = if (type == AccountType.TARJETA_CREDITO) "Deuda Actual ($)" else "Saldo Actual ($)"
-                    OutlinedTextField(
-                        value = initialBalance,
-                        onValueChange = { initialBalance = it },
-                        label = { Text(label) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
+                if (type != AccountType.TARJETA_CREDITO) {
+                    item {
+                        OutlinedTextField(
+                            value = initialBalance,
+                            onValueChange = { initialBalance = it },
+                            label = { Text("Saldo Actual ($)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
                 }
 
                 // Mostrar campos adicionales si es Tarjeta de Crédito
@@ -471,14 +472,19 @@ private fun AddAccountDialog(
             }
         },
         confirmButton = {
-            val isBalanceValid = initialBalance.isBlank() || initialBalance.toDoubleOrNull() != null
+            val isBalanceValid = if (type == AccountType.TARJETA_CREDITO) true else {
+                initialBalance.isBlank() || initialBalance.toDoubleOrNull() != null
+            }
             val isLimitValid = if (type == AccountType.TARJETA_CREDITO) {
                 (creditLimit.toDoubleOrNull() ?: 0.0) > 0.0
             } else true
 
             Button(
                 onClick = {
-                    val balance = initialBalance.toDoubleOrNull() ?: 0.0
+                    // Para tarjetas de crédito, la deuda siempre inicia en $0.
+                    // La deuda se construye desde las Compras Diferidas dentro de cada tarjeta.
+                    val balance = if (type == AccountType.TARJETA_CREDITO) 0.0
+                                  else (initialBalance.toDoubleOrNull() ?: 0.0)
                     val limit = creditLimit.toDoubleOrNull() ?: 0.0
                     val cutoff = cutoffDay.toIntOrNull() ?: 15
                     val due = paymentDueDay.toIntOrNull() ?: 30

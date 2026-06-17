@@ -98,13 +98,14 @@ class SettingsViewModel @Inject constructor(
             )
             accountDao.upsert(account)
 
-            // Si es tarjeta de crédito, insertar también en su tabla específica
+            // Si es tarjeta de crédito, insertar también en su tabla específica.
+            // La deuda siempre inicia en $0 — se construye desde las Compras Diferidas.
             if (type == AccountType.TARJETA_CREDITO) {
                 val card = CreditCardEntity(
                     id = UUID.randomUUID().toString(),
                     accountId = accountId,
                     creditLimit = creditLimit,
-                    currentDebt = initialBalance, // La deuda inicial que tenga
+                    currentDebt = 0.0,
                     cutoffDay = cutoffDay,
                     paymentDueDay = paymentDueDay,
                     minPaymentPercentage = 5.0,
