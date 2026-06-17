@@ -9,6 +9,7 @@ import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
+import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
