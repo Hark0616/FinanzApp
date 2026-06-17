@@ -20,7 +20,10 @@ data class DashboardUiState(
     val recentTransactions: List<TransactionWithCategory> = emptyList(),
     val monthlySpendingByCategory: List<CategorySpendingItem> = emptyList(),
     val pendingReviewCount: Int = 0,
-    val isAccountsExpanded: Boolean = true
+    val isAccountsExpanded: Boolean = true,
+    val disposableCashFlow: Double = 0.0,
+    val totalIncomesThisMonth: Double = 0.0,
+    val totalDebtInstallmentsThisMonth: Double = 0.0
 )
 
 data class AccountWithBalance(

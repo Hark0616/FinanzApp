@@ -10,6 +10,7 @@ import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
+import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
@@ -34,6 +35,7 @@ class DashboardViewModel @Inject constructor(
     private val categoryDao: CategoryDao,
     private val transactionDao: TransactionDao,
     private val deferredPurchaseDao: DeferredPurchaseDao,
+    private val loanDao: LoanDao,
     private val calculator: CreditCardCalculator
 ) : ViewModel() {
 
@@ -59,10 +61,13 @@ class DashboardViewModel @Inject constructor(
         },
         categoryDao.observeAll(),
         transactionDao.observeAll(),
-        transactionDao.observeSpendingByCategory(monthStart, monthEnd)
-    ) { accounts, cardsAndPurchases, categories, transactions, spending ->
+        combine(loanDao.observeAll(), transactionDao.observeSpendingByCategory(monthStart, monthEnd)) { loans, spending ->
+            loans to spending
+        }
+    ) { accounts, cardsAndPurchases, categories, transactions, loansAndSpending ->
 
         val (cards, allDeferredPurchases) = cardsAndPurchases
+        val (loans, spending) = loansAndSpending
         val categoryMap = categories.associateBy { it.id }
         val accountMap = accounts.associateBy { it.id }
         val purchasesByCard = allDeferredPurchases.groupBy { it.creditCardId }
@@ -95,7 +100,6 @@ class DashboardViewModel @Inject constructor(
             )
         }
 
-
         // Últimas 5 transacciones
         val recentTransactions = transactions.take(5).map { tx ->
             TransactionWithCategory(
@@ -118,6 +122,20 @@ class DashboardViewModel @Inject constructor(
         // Transacciones pendientes de revisión
         val pendingCount = transactions.count { it.needsReview }
 
+        // Calcular flujo de caja disponible de este mes
+        val totalIncomesThisMonth = transactions
+            .filter { it.type == TransactionType.INGRESO && it.timestamp in monthStart until monthEnd }
+            .sumOf { it.amount }
+
+        val totalCreditCardInstallments = cards.sumOf { card ->
+            val cardPurchases = purchasesByCard[card.id] ?: emptyList()
+            calculator.totalMonthlyInstallments(cardPurchases, card.interestRateEA)
+        }
+
+        val totalLoanInstallments = loans.filter { it.remainingAmount > 0 }.sumOf { it.monthlyInstallmentAmount }
+        val totalDebtInstallmentsThisMonth = totalCreditCardInstallments + totalLoanInstallments
+        val disposableCashFlow = totalIncomesThisMonth - totalDebtInstallmentsThisMonth
+
         DashboardUiState(
             isLoading = false,
             isNotificationPermissionGranted = isNotificationListenerEnabled(),
@@ -127,7 +145,10 @@ class DashboardViewModel @Inject constructor(
             recentTransactions = recentTransactions,
             monthlySpendingByCategory = spendingItems,
             pendingReviewCount = pendingCount,
-            isAccountsExpanded = _isAccountsExpanded.value
+            isAccountsExpanded = _isAccountsExpanded.value,
+            disposableCashFlow = disposableCashFlow,
+            totalIncomesThisMonth = totalIncomesThisMonth,
+            totalDebtInstallmentsThisMonth = totalDebtInstallmentsThisMonth
         )
     }.stateIn(
         scope = viewModelScope,

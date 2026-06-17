@@ -33,6 +33,7 @@ import com.ivan.finanzapp.ui.theme.TrafficYellow
 fun DashboardScreen(
     onNavigateToTransactions: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToBalance: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -104,6 +105,16 @@ fun DashboardScreen(
                 totalBalance = state.totalBalance,
                 isExpanded = state.isAccountsExpanded,
                 onToggleExpand = viewModel::toggleAccountsExpanded
+            )
+        }
+
+        // Card de flujo de caja disponible del mes
+        item {
+            DisposableCashFlowCard(
+                disposableCashFlow = state.disposableCashFlow,
+                totalIncomes = state.totalIncomesThisMonth,
+                totalDebt = state.totalDebtInstallmentsThisMonth,
+                onClick = onNavigateToBalance
             )
         }
 
@@ -516,5 +527,88 @@ private fun EmptyStateCard() {
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
+    }
+}
+
+@Composable
+private fun DisposableCashFlowCard(
+    disposableCashFlow: Double,
+    totalIncomes: Double,
+    totalDebt: Double,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+        ),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(Modifier.padding(20.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Flujo de Caja Disponible (Mes)",
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Icon(
+                    Icons.Default.TrendingUp,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                formatCOP(disposableCashFlow),
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.Bold,
+                fontSize = 28.sp,
+                lineHeight = 32.sp
+            )
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f))
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        "Ingresos",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        formatCOP(totalIncomes),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TrafficGreen
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "Deudas Comprometidas",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        formatCOP(totalDebt),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TrafficRed
+                    )
+                }
+            }
+        }
     }
 }

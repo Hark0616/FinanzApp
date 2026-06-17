@@ -42,6 +42,9 @@ fun FinanzAppNavHost(
                 },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
+                },
+                onNavigateToBalance = {
+                    navController.navigate(Screen.Assets.route)
                 }
             )
         }
