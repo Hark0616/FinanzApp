@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,6 +47,7 @@ fun CreditCardsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedForPayment by remember { mutableStateOf<CreditCardSummary?>(null) }
     var selectedForDeferredPurchase by remember { mutableStateOf<CreditCardSummary?>(null) }
+    var editingDeferredPurchase by remember { mutableStateOf<Pair<CreditCardSummary, DeferredPurchaseEntity>?>(null) }
 
     Scaffold { innerPadding ->
         if (state.isLoading) {
@@ -86,6 +88,9 @@ fun CreditCardsScreen(
                             },
                             onMarkPaidClick = { purchaseId ->
                                 viewModel.markInstallmentPaid(purchaseId, cardSummary.card.id)
+                            },
+                            onEditPurchaseClick = { purchase ->
+                                editingDeferredPurchase = cardSummary to purchase
                             }
                         )
                     }
@@ -117,6 +122,25 @@ fun CreditCardsScreen(
                 }
             )
         }
+
+        // Diálogo para Editar Compra Diferida
+        editingDeferredPurchase?.let { (summary, purchase) ->
+            EditDeferredPurchaseDialog(
+                purchase = purchase,
+                onDismiss = { editingDeferredPurchase = null },
+                onConfirm = { desc, amount, totalInst, paidInst ->
+                    viewModel.updateDeferredPurchase(
+                        purchaseId = purchase.id,
+                        cardId = summary.card.id,
+                        description = desc,
+                        totalAmount = amount,
+                        totalInstallments = totalInst,
+                        paidInstallments = paidInst
+                    )
+                    editingDeferredPurchase = null
+                }
+            )
+        }
     }
 }
 
@@ -127,7 +151,8 @@ private fun PhysicalLikeCreditCard(
     onPayClick: () -> Unit,
     onAddDeferredClick: () -> Unit,
     onDeletePurchaseClick: (String) -> Unit,
-    onMarkPaidClick: (String) -> Unit
+    onMarkPaidClick: (String) -> Unit,
+    onEditPurchaseClick: (DeferredPurchaseEntity) -> Unit
 ) {
     val gradientColors = when (summary.usageLevel) {
         "LOW" -> listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))
@@ -343,7 +368,8 @@ private fun PhysicalLikeCreditCard(
                             DeferredPurchaseItem(
                                 purchase = purchase,
                                 onMarkPaid = onMarkPaidClick,
-                                onDelete = onDeletePurchaseClick
+                                onDelete = onDeletePurchaseClick,
+                                onEdit = onEditPurchaseClick
                             )
                         }
                     }
@@ -586,7 +612,8 @@ private fun AddDeferredPurchaseDialog(
 private fun DeferredPurchaseItem(
     purchase: DeferredPurchaseEntity,
     onMarkPaid: (String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onEdit: (DeferredPurchaseEntity) -> Unit
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f)),
@@ -606,6 +633,16 @@ private fun DeferredPurchaseItem(
                     fontSize = 14.sp
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { onEdit(purchase) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Editar",
+                            tint = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
                     IconButton(
                         onClick = { onMarkPaid(purchase.id) },
                         modifier = Modifier.size(32.dp)
@@ -678,5 +715,98 @@ private fun DeferredPurchaseItem(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditDeferredPurchaseDialog(
+    purchase: DeferredPurchaseEntity,
+    onDismiss: () -> Unit,
+    onConfirm: (description: String, totalAmount: Double, totalInstallments: Int, paidInstallments: Int) -> Unit
+) {
+    var description by remember { mutableStateOf(purchase.description) }
+    var totalAmount by remember { mutableStateOf(purchase.totalAmount.toString()) }
+    var totalInstallments by remember { mutableStateOf(purchase.totalInstallments.toString()) }
+    var paidInstallments by remember { mutableStateOf(purchase.paidInstallments.toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Editar Compra Diferida") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Modifica los detalles de la compra \"${purchase.description}\".",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Descripción") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = totalAmount,
+                    onValueChange = { totalAmount = it },
+                    label = { Text("Monto Total ($)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = totalInstallments,
+                        onValueChange = { totalInstallments = it },
+                        label = { Text("Cuotas Totales") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+
+                    OutlinedTextField(
+                        value = paidInstallments,
+                        onValueChange = { paidInstallments = it },
+                        label = { Text("Cuotas Pagadas") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            val amountVal = totalAmount.toDoubleOrNull() ?: 0.0
+            val totalInstVal = totalInstallments.toIntOrNull() ?: 0
+            val paidInstVal = paidInstallments.toIntOrNull() ?: 0
+            val isValid = description.isNotBlank() &&
+                    amountVal > 0.0 &&
+                    totalInstVal > 0 &&
+                    paidInstVal >= 0 &&
+                    paidInstVal <= totalInstVal
+
+            Button(
+                onClick = {
+                    onConfirm(description, amountVal, totalInstVal, paidInstVal)
+                },
+                enabled = isValid
+            ) {
+                Text("Guardar Cambios")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
 }
 

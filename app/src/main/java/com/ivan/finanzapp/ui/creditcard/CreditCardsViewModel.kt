@@ -134,7 +134,17 @@ class CreditCardsViewModel @Inject constructor(
                 needsReview = false
             )
             transactionDao.insertIfNotExists(cardTx)
-            creditCardDao.adjustDebt(card.id, -paymentAmount)
+
+            // Distribuir el abono entre las compras diferidas
+            val purchases = deferredPurchaseDao.observeByCardId(card.id).first()
+            val result = calculator.distributePayment(paymentAmount, purchases)
+            for (updated in result.updatedPurchases) {
+                deferredPurchaseDao.upsert(updated)
+            }
+            for (deletedId in result.deletedPurchaseIds) {
+                deferredPurchaseDao.delete(deletedId)
+            }
+            recalculateCardDebt(card.id)
 
             // 2. Si se usó una cuenta de fondos (ahorros), debitar saldo y registrar transacción
             fundingAccountId?.let { accountId ->
@@ -154,6 +164,28 @@ class CreditCardsViewModel @Inject constructor(
                 transactionDao.insertIfNotExists(fundingTx)
                 accountDao.adjustBalance(accountId, -paymentAmount)
             }
+        }
+    }
+
+    fun updateDeferredPurchase(
+        purchaseId: String,
+        cardId: String,
+        description: String,
+        totalAmount: Double,
+        totalInstallments: Int,
+        paidInstallments: Int
+    ) {
+        viewModelScope.launch {
+            val purchase = DeferredPurchaseEntity(
+                id = purchaseId,
+                creditCardId = cardId,
+                description = description,
+                totalAmount = totalAmount,
+                totalInstallments = totalInstallments,
+                paidInstallments = paidInstallments
+            )
+            deferredPurchaseDao.upsert(purchase)
+            recalculateCardDebt(cardId)
         }
     }
 }

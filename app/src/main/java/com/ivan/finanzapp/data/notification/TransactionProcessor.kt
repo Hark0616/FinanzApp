@@ -2,17 +2,21 @@ package com.ivan.finanzapp.data.notification
 
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
+import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
+import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.data.notification.parsers.ParserDispatcher
 import com.ivan.finanzapp.data.remote.LocalAiClassifier
 import com.ivan.finanzapp.data.remote.TransactionAiClassifier
+import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.domain.usecase.AccountResolver
 import com.ivan.finanzapp.domain.usecase.CategoryResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,7 +44,9 @@ class TransactionProcessor @Inject constructor(
     private val accountResolver: AccountResolver,
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
-    private val creditCardDao: CreditCardDao
+    private val creditCardDao: CreditCardDao,
+    private val deferredPurchaseDao: DeferredPurchaseDao,
+    private val calculator: CreditCardCalculator
 ) {
 
     // Scope propio para no bloquear el NotificationListenerService
@@ -150,18 +156,61 @@ class TransactionProcessor @Inject constructor(
                     }
                 }
                 TransactionType.GASTO_TC -> {
-                    // Para tarjeta de crédito: actualizar deuda, no saldo de cuenta de ahorros
-                    updateCreditCardDebt(accountId, +transaction.amount)
+                    // Para tarjeta de crédito: registrar compra diferida a 1 cuota y recalcular deuda
+                    registerDeferredPurchaseFromNotification(
+                        accountId = accountId,
+                        transactionId = id,
+                        merchant = transaction.merchant,
+                        amount = transaction.amount
+                    )
                 }
                 TransactionType.PAGO_TC -> {
-                    updateCreditCardDebt(accountId, -transaction.amount)
+                    // Para tarjeta de crédito: distribuir el pago entre las compras diferidas y recalcular
+                    registerPaymentFromNotification(accountId, transaction.amount)
                 }
             }
         }
     }
 
-    private suspend fun updateCreditCardDebt(accountId: String, delta: Double) {
+    private suspend fun registerDeferredPurchaseFromNotification(
+        accountId: String,
+        transactionId: String,
+        merchant: String,
+        amount: Double
+    ) {
         val card = creditCardDao.getByAccountId(accountId) ?: return
-        creditCardDao.adjustDebt(card.id, delta)
+        val purchase = DeferredPurchaseEntity(
+            id = transactionId,
+            creditCardId = card.id,
+            description = merchant,
+            totalAmount = amount,
+            totalInstallments = 1,
+            paidInstallments = 0
+        )
+        deferredPurchaseDao.upsert(purchase)
+        recalculateCardDebt(card.id)
+    }
+
+    private suspend fun registerPaymentFromNotification(accountId: String, amount: Double) {
+        val card = creditCardDao.getByAccountId(accountId) ?: return
+        val purchases = deferredPurchaseDao.observeByCardId(card.id).first()
+        val result = calculator.distributePayment(amount, purchases)
+
+        for (updated in result.updatedPurchases) {
+            deferredPurchaseDao.upsert(updated)
+        }
+        for (deletedId in result.deletedPurchaseIds) {
+            deferredPurchaseDao.delete(deletedId)
+        }
+
+        recalculateCardDebt(card.id)
+    }
+
+    private suspend fun recalculateCardDebt(cardId: String) {
+        val purchases = deferredPurchaseDao.observeByCardId(cardId).first()
+        val card = creditCardDao.observeAll().first().find { it.id == cardId } ?: return
+        val newDebt = calculator.totalDeferredDebt(purchases)
+        val updatedCard = card.copy(currentDebt = newDebt)
+        creditCardDao.update(updatedCard)
     }
 }

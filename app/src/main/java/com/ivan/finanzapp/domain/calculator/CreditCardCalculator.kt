@@ -126,5 +126,86 @@ class CreditCardCalculator @Inject constructor() {
     private fun safeDayOfMonth(day: Int, reference: LocalDate): Int =
         day.coerceAtMost(reference.month.length(reference.isLeapYear))
 
+    /**
+     * Distribuye un abono o pago a la tarjeta de crédito entre sus compras diferidas activas.
+     * Prioriza las compras más antiguas (ordenadas por createdAt) y calcula el abono
+     * de cuotas de manera exacta.
+     */
+    fun distributePayment(
+        paymentAmount: Double,
+        purchases: List<DeferredPurchaseEntity>
+    ): PaymentDistributionResult {
+        val updated = mutableListOf<DeferredPurchaseEntity>()
+        val deletedIds = mutableListOf<String>()
+        var remainingPayment = paymentAmount
+
+        // Ordenar compras activas por fecha de creación (de más antigua a más nueva)
+        val activePurchases = purchases
+            .filter { (it.totalInstallments - it.paidInstallments) > 0 }
+            .sortedBy { it.createdAt }
+
+        for (purchase in activePurchases) {
+            if (remainingPayment <= 0.0) {
+                updated.add(purchase)
+                continue
+            }
+
+            val instAmount = if (purchase.totalInstallments > 0) purchase.totalAmount / purchase.totalInstallments else 0.0
+            if (instAmount <= 0.0) {
+                deletedIds.add(purchase.id)
+                continue
+            }
+
+            val remainingInst = purchase.totalInstallments - purchase.paidInstallments
+            val fullInstPaid = (remainingPayment / instAmount).toInt()
+            val numToPay = fullInstPaid.coerceAtMost(remainingInst)
+
+            if (numToPay > 0) {
+                val newPaid = purchase.paidInstallments + numToPay
+                remainingPayment -= numToPay * instAmount
+
+                if (newPaid >= purchase.totalInstallments) {
+                    deletedIds.add(purchase.id)
+                } else {
+                    val updatedPurchase = purchase.copy(paidInstallments = newPaid)
+                    val newRemainingInst = purchase.totalInstallments - newPaid
+                    if (remainingPayment > 0.0 && remainingPayment < instAmount) {
+                        // Aplicar remanente fraccionario de forma exacta
+                        val adjustment = remainingPayment * purchase.totalInstallments.toDouble() / newRemainingInst.toDouble()
+                        val newTotal = (updatedPurchase.totalAmount - adjustment).coerceAtLeast(0.0)
+                        remainingPayment = 0.0
+                        if (newTotal <= 0.0) {
+                            deletedIds.add(purchase.id)
+                        } else {
+                            updated.add(updatedPurchase.copy(totalAmount = newTotal))
+                        }
+                    } else {
+                        updated.add(updatedPurchase)
+                    }
+                }
+            } else {
+                // El pago remanente no cubre ni 1 cuota de esta compra, se abona como fracción de forma exacta
+                val adjustment = remainingPayment * purchase.totalInstallments.toDouble() / remainingInst.toDouble()
+                val newTotal = (purchase.totalAmount - adjustment).coerceAtLeast(0.0)
+                remainingPayment = 0.0
+                if (newTotal <= 0.0) {
+                    deletedIds.add(purchase.id)
+                } else {
+                    updated.add(purchase.copy(totalAmount = newTotal))
+                }
+            }
+        }
+
+        return PaymentDistributionResult(updated, deletedIds)
+    }
+
     enum class UsageLevel { LOW, MEDIUM, HIGH }
 }
+
+/**
+ * Resultado de distribuir un abono o pago a la tarjeta entre sus compras diferidas.
+ */
+data class PaymentDistributionResult(
+    val updatedPurchases: List<DeferredPurchaseEntity>,
+    val deletedPurchaseIds: List<String>
+)
