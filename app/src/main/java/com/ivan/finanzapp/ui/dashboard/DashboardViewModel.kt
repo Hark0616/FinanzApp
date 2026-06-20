@@ -29,7 +29,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val accountDao: AccountDao,
     private val creditCardDao: CreditCardDao,
     private val categoryDao: CategoryDao,

@@ -3,6 +3,7 @@ package com.ivan.finanzapp.data.local.entity
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
+import androidx.room.Index
 
 /**
  * Información específica de una tarjeta de crédito, vinculada 1:1 a una
@@ -17,7 +18,8 @@ import androidx.room.PrimaryKey
             childColumns = ["accountId"],
             onDelete = ForeignKey.CASCADE
         )
-    ]
+    ],
+    indices = [Index("accountId")]
 )
 data class CreditCardEntity(
     @PrimaryKey

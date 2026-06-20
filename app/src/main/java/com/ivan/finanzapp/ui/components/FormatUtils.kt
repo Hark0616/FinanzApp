@@ -11,7 +11,7 @@ import java.util.Locale
  * colombianas generalmente trabajan en pesos enteros.
  */
 fun formatCOP(amount: Double, showCents: Boolean = false): String {
-    val locale = Locale("es", "CO")
+    val locale = Locale.forLanguageTag("es-CO")
     val format = NumberFormat.getCurrencyInstance(locale)
     format.maximumFractionDigits = if (showCents) 2 else 0
     format.minimumFractionDigits = 0

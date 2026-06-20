@@ -1,6 +1,7 @@
 package com.ivan.finanzapp.ui.navigation
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -12,7 +13,7 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     object Transactions : Screen("transactions", "Movimientos", Icons.Default.SwapVert)
     object CreditCards : Screen("credit_cards", "Tarjetas", Icons.Default.CreditCard)
     object Loans : Screen("loans", "Créditos", Icons.Default.AccountBalance)
-    object Assets : Screen("assets", "Balance", Icons.Default.TrendingUp)
+    object Assets : Screen("assets", "Balance", Icons.AutoMirrored.Filled.TrendingUp)
     object Settings : Screen("settings", "Ajustes", Icons.Default.Settings)
 }
 

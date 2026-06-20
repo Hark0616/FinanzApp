@@ -13,7 +13,7 @@ data class OpenRouterRequest(
     val model: String,
     val messages: List<ChatMessage>,
     val temperature: Double = 0.1,
-    @Json(name = "response_format") val responseFormat: ResponseFormat? = ResponseFormat()
+    @param:Json(name = "response_format") val responseFormat: ResponseFormat? = ResponseFormat()
 )
 
 @JsonClass(generateAdapter = true)
@@ -46,6 +46,6 @@ data class AiClassificationResult(
     val tipo: String,              // "INGRESO" | "GASTO" | "GASTO_TC" | "TRANSFERENCIA" | "PAGO_TC"
     val monto: Double,
     val comercio: String?,
-    @Json(name = "categoria_sugerida") val categoriaSugerida: String?,
+    @param:Json(name = "categoria_sugerida") val categoriaSugerida: String?,
     val confianza: Double
 )

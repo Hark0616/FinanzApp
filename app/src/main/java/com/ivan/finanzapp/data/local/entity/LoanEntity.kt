@@ -3,6 +3,7 @@ package com.ivan.finanzapp.data.local.entity
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
+import androidx.room.Index
 
 /**
  * Representa un crédito o préstamo (crédito de consumo, libre inversión, hipotecario, etc.).
@@ -17,7 +18,8 @@ import androidx.room.PrimaryKey
             childColumns = ["linkedAccountId"],
             onDelete = ForeignKey.SET_NULL
         )
-    ]
+    ],
+    indices = [Index("linkedAccountId")]
 )
 data class LoanEntity(
     @PrimaryKey
