@@ -23,7 +23,7 @@ import com.ivan.finanzapp.data.local.entity.MerchantCategoryMappingEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.data.local.entity.AssetEntity
 import com.ivan.finanzapp.data.local.dao.AssetDao
-import net.sqlcipher.database.SupportFactory
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [
@@ -74,7 +74,8 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         private fun build(context: Context, passphrase: ByteArray): AppDatabase {
-            val factory: SupportSQLiteOpenHelper.Factory = SupportFactory(passphrase)
+            System.loadLibrary("sqlcipher")
+            val factory: SupportSQLiteOpenHelper.Factory = SupportOpenHelperFactory(passphrase)
             return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .openHelperFactory(factory)
                 .fallbackToDestructiveMigration()
