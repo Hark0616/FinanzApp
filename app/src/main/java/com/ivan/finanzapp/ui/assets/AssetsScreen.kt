@@ -229,8 +229,7 @@ fun AssetsScreen(
                 if (selectedTab == 0) {
                     // Vista 1: Flujo de Caja (Ingresos vs Egresos Comprometidos)
                     CashFlowTabContent(
-                        state = state,
-                        onAddIncomeClick = { isAddIncomeDialogVisible = true }
+                        state = state
                     )
                 } else {
                     // Vista 2: Patrimonio e Inmuebles (Activos)
@@ -282,8 +281,7 @@ fun AssetsScreen(
 
 @Composable
 private fun CashFlowTabContent(
-    state: BalanceUiState,
-    onAddIncomeClick: () -> Unit
+    state: BalanceUiState
 ) {
     val totalDebtInstallments = state.totalCreditCardInstallments + state.totalLoanInstallments
     val dtiRatio = if (state.totalIncomesThisMonth > 0) totalDebtInstallments / state.totalIncomesThisMonth else 0.0
@@ -1026,14 +1024,14 @@ private fun AddIncomeDialog(
     var amount by remember { mutableStateOf("") }
 
     val defaultCategory = categories.find { it.id == "cat_ingresos" }
-    var selectedCategory by remember { mutableStateOf<CategoryEntity?>(defaultCategory ?: categories.firstOrNull()) }
+    var selectedCategory by remember { mutableStateOf(defaultCategory ?: categories.firstOrNull()) }
     var categoryDropdownExpanded by remember { mutableStateOf(false) }
 
     // Filtrar cuentas para depositar (no tarjetas de crédito)
     val depositAccounts = remember(accounts) {
         accounts.filter { it.type != com.ivan.finanzapp.domain.model.AccountType.TARJETA_CREDITO }
     }
-    var selectedAccount by remember { mutableStateOf<AccountEntity?>(depositAccounts.firstOrNull()) }
+    var selectedAccount by remember { mutableStateOf(depositAccounts.firstOrNull()) }
     var accountDropdownExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
