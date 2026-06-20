@@ -15,6 +15,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -87,10 +89,10 @@ fun AssetsScreen(
                     ) {
                         AssetType.entries.forEachIndexed { index, type ->
                             val (icon, color, label) = when (type) {
-                                AssetType.INVERSION -> Triple(androidx.compose.material.icons.Icons.AutoMirrored.Filled.TrendingUp, Color(0xFF1976D2), "Inversión")
-                                AssetType.INMUEBLE -> Triple(androidx.compose.material.icons.Icons.Default.Home, Color(0xFF7B1FA2), "Inmueble")
-                                AssetType.VEHICULO -> Triple(androidx.compose.material.icons.Icons.Default.Build, Color(0xFFE64A19), "Vehículo")
-                                AssetType.OTRO -> Triple(androidx.compose.material.icons.Icons.Default.Folder, Color(0xFF616161), "Otro Activo")
+                                AssetType.INVERSION -> Triple(Icons.AutoMirrored.Filled.TrendingUp, Color(0xFF1976D2), "Inversión")
+                                AssetType.INMUEBLE -> Triple(Icons.Default.Home, Color(0xFF7B1FA2), "Inmueble")
+                                AssetType.VEHICULO -> Triple(Icons.Default.Build, Color(0xFFE64A19), "Vehículo")
+                                AssetType.OTRO -> Triple(Icons.Default.Folder, Color(0xFF616161), "Otro Activo")
                             }
 
                             // Delay progresivo para efecto de cascada
@@ -507,7 +509,7 @@ private fun CashFlowTabContent(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
-                            imageVector = androidx.compose.material.icons.Icons.AutoMirrored.Filled.TrendingUp,
+                            imageVector = Icons.AutoMirrored.Filled.TrendingUp,
                             contentDescription = null,
                             modifier = Modifier.size(36.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
@@ -759,10 +761,10 @@ private fun AssetItem(
     onDelete: () -> Unit
 ) {
     val (icon, color) = when (asset.type) {
-        AssetType.INVERSION -> androidx.compose.material.icons.Icons.AutoMirrored.Filled.TrendingUp to Color(0xFF1976D2)
-        AssetType.INMUEBLE -> androidx.compose.material.icons.Icons.Default.Home to Color(0xFF7B1FA2)
-        AssetType.VEHICULO -> androidx.compose.material.icons.Icons.Default.Build to Color(0xFFE64A19)
-        AssetType.OTRO -> androidx.compose.material.icons.Icons.Default.Folder to Color(0xFF616161)
+        AssetType.INVERSION -> Icons.AutoMirrored.Filled.TrendingUp to Color(0xFF1976D2)
+        AssetType.INMUEBLE -> Icons.Default.Home to Color(0xFF7B1FA2)
+        AssetType.VEHICULO -> Icons.Default.Build to Color(0xFFE64A19)
+        AssetType.OTRO -> Icons.Default.Folder to Color(0xFF616161)
     }
 
     Card(
