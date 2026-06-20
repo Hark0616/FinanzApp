@@ -203,7 +203,7 @@ fun AssetsScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             // Selector de pestaña superior
-            TabRow(
+            PrimaryTabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.primary,
