@@ -2,6 +2,7 @@ package com.ivan.finanzapp
 
 import android.app.Application
 import com.ivan.finanzapp.data.local.DefaultCategories
+import com.ivan.finanzapp.data.local.dao.AssetDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -24,11 +25,15 @@ class FinanzApplication : Application() {
     @Inject
     lateinit var categoryDao: CategoryDao
 
+    @Inject
+    lateinit var assetDao: AssetDao
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
         seedDefaultCategoriesIfNeeded()
+        cleanLegacySueldoAssets()
     }
 
     /**
@@ -41,6 +46,12 @@ class FinanzApplication : Application() {
             if (categoryDao.count() == 0) {
                 categoryDao.insertAll(DefaultCategories.ALL)
             }
+        }
+    }
+
+    private fun cleanLegacySueldoAssets() {
+        appScope.launch {
+            assetDao.deleteSueldoAssets()
         }
     }
 }

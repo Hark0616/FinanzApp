@@ -17,4 +17,7 @@ interface AssetDao {
 
     @Query("DELETE FROM assets WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("DELETE FROM assets WHERE type = 'SUELDO' OR UPPER(name) = 'SUELDO'")
+    suspend fun deleteSueldoAssets()
 }

@@ -80,7 +80,12 @@ class LocalAiClassifier @Inject constructor(
                         TransactionType.GASTO
                     }
                 }
-                fullText.contains("recibi", ignoreCase = true) || fullText.contains("abono", ignoreCase = true) || fullText.contains("consigna", ignoreCase = true) -> {
+                fullText.contains("recibi", ignoreCase = true) || 
+                fullText.contains("abono", ignoreCase = true) || 
+                fullText.contains("consigna", ignoreCase = true) || 
+                fullText.contains("nomina", ignoreCase = true) || 
+                fullText.contains("sueldo", ignoreCase = true) || 
+                fullText.contains("salario", ignoreCase = true) -> {
                     TransactionType.INGRESO
                 }
                 fullText.contains("transfe", ignoreCase = true) || fullText.contains("envia", ignoreCase = true) -> {
