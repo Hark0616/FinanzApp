@@ -1,12 +1,43 @@
 package com.ivan.finanzapp.domain.calculator
 
 import com.ivan.finanzapp.data.local.entity.LoanEntity
+import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LoanCalculatorTest {
 
     private val calculator = LoanCalculator()
+
+    @Test
+    fun normalizeMonthlyInterestRateKeepsMonthlyEffectiveRate() {
+        val monthlyRate = calculator.normalizeMonthlyInterestRate(
+            interestRateInputValue = 2.0,
+            interestRateType = LoanInterestRateType.MONTHLY_EFFECTIVE
+        )
+
+        assertEquals(2.0, monthlyRate, MONEY_DELTA)
+    }
+
+    @Test
+    fun normalizeMonthlyInterestRateConvertsEffectiveAnnualRate() {
+        val monthlyRate = calculator.normalizeMonthlyInterestRate(
+            interestRateInputValue = 26.824179456,
+            interestRateType = LoanInterestRateType.EFFECTIVE_ANNUAL
+        )
+
+        assertEquals(2.0, monthlyRate, RATE_DELTA)
+    }
+
+    @Test
+    fun normalizeMonthlyInterestRateConvertsNominalAnnualMonthlyRate() {
+        val monthlyRate = calculator.normalizeMonthlyInterestRate(
+            interestRateInputValue = 24.0,
+            interestRateType = LoanInterestRateType.NOMINAL_ANNUAL_MONTHLY
+        )
+
+        assertEquals(2.0, monthlyRate, MONEY_DELTA)
+    }
 
     @Test
     fun monthlyInterestAmountUsesRemainingDebtAndMonthlyRate() {
@@ -272,5 +303,6 @@ class LoanCalculatorTest {
 
     private companion object {
         const val MONEY_DELTA = 0.0001
+        const val RATE_DELTA = 0.000001
     }
 }

@@ -4,6 +4,8 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
 import androidx.room.Index
+import com.ivan.finanzapp.domain.model.LoanAmortizationType
+import com.ivan.finanzapp.domain.model.LoanInterestRateType
 
 /**
  * Representa un crédito o préstamo (crédito de consumo, libre inversión, hipotecario, etc.).
@@ -27,8 +29,14 @@ data class LoanEntity(
     val name: String,
     val totalAmount: Double,
     val remainingAmount: Double,
-    /** Tasa de interés mensual cobrada (ej. 1.8 = 1.8% mensual). */
+    /** Tasa mensual efectiva normalizada usada para cálculo interno. */
     val monthlyInterestRate: Double,
+    /** Tasa declarada por el usuario/banco antes de normalizarla. */
+    val interestRateInputValue: Double = monthlyInterestRate,
+    /** Convención de la tasa declarada. */
+    val interestRateType: LoanInterestRateType = LoanInterestRateType.MONTHLY_EFFECTIVE,
+    /** Método de amortización pactado. */
+    val amortizationType: LoanAmortizationType = LoanAmortizationType.FIXED_INSTALLMENT,
     /** Número total de cuotas pactadas. */
     val totalInstallments: Int,
     /** Cantidad de cuotas pagadas hasta el momento. */

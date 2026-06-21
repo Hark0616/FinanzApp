@@ -7,6 +7,9 @@ import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
+import com.ivan.finanzapp.domain.calculator.LoanCalculator
+import com.ivan.finanzapp.domain.model.LoanAmortizationType
+import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.usecase.LoanPaymentRegistrar
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,7 +30,8 @@ class LoansViewModel @Inject constructor(
     private val loanDao: LoanDao,
     private val accountDao: AccountDao,
     private val loanPaymentDao: LoanPaymentDao,
-    private val loanPaymentRegistrar: LoanPaymentRegistrar
+    private val loanPaymentRegistrar: LoanPaymentRegistrar,
+    private val loanCalculator: LoanCalculator
 ) : ViewModel() {
 
     private val _isAddDialogVisible = MutableStateFlow(false)
@@ -76,6 +80,7 @@ class LoansViewModel @Inject constructor(
         name: String,
         totalAmount: Double,
         interestRate: Double,
+        interestRateType: LoanInterestRateType,
         totalInstallments: Int,
         monthlyInstallment: Double,
         monthlyInsurance: Double,
@@ -98,13 +103,20 @@ class LoansViewModel @Inject constructor(
             val nextPaymentDateMillis = paymentDate.atStartOfDay(ZoneId.systemDefault())
                 .toInstant()
                 .toEpochMilli()
+            val normalizedMonthlyRate = loanCalculator.normalizeMonthlyInterestRate(
+                interestRateInputValue = interestRate,
+                interestRateType = interestRateType
+            )
 
             val loan = LoanEntity(
                 id = UUID.randomUUID().toString(),
                 name = name,
                 totalAmount = totalAmount,
                 remainingAmount = totalAmount,
-                monthlyInterestRate = interestRate,
+                monthlyInterestRate = normalizedMonthlyRate,
+                interestRateInputValue = interestRate,
+                interestRateType = interestRateType,
+                amortizationType = LoanAmortizationType.FIXED_INSTALLMENT,
                 totalInstallments = normalizedInstallments,
                 paidInstallments = 0,
                 monthlyInstallmentAmount = monthlyInstallment,
