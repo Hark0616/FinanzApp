@@ -14,5 +14,6 @@ data class LoansUiState(
     val latestPaymentsByLoanId: Map<String, LoanPaymentEntity> = emptyMap(),
     val totalDebt: Double = 0.0,
     val totalUnpaidInterest: Double = 0.0,
+    val totalUnpaidCharges: Double = 0.0,
     val isAddDialogVisible: Boolean = false
 )

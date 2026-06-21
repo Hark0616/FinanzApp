@@ -75,7 +75,8 @@ fun LoansScreen(
                 item {
                     TotalDebtCard(
                         totalDebt = state.totalDebt,
-                        totalUnpaidInterest = state.totalUnpaidInterest
+                        totalUnpaidInterest = state.totalUnpaidInterest,
+                        totalUnpaidCharges = state.totalUnpaidCharges
                     )
                 }
 
@@ -109,8 +110,18 @@ fun LoansScreen(
             AddLoanDialog(
                 accounts = state.accounts,
                 onDismiss = { viewModel.toggleAddDialog(false) },
-                onConfirm = { name, total, interest, installments, cuota, day, accountId ->
-                    viewModel.addLoan(name, total, interest, installments, cuota, day, accountId)
+                onConfirm = { name, total, interest, installments, cuota, insurance, fee, day, accountId ->
+                    viewModel.addLoan(
+                        name = name,
+                        totalAmount = total,
+                        interestRate = interest,
+                        totalInstallments = installments,
+                        monthlyInstallment = cuota,
+                        monthlyInsurance = insurance,
+                        monthlyFee = fee,
+                        paymentDay = day,
+                        linkedAccountId = accountId
+                    )
                 }
             )
         }
@@ -151,7 +162,8 @@ fun LoansScreen(
 @Composable
 private fun TotalDebtCard(
     totalDebt: Double,
-    totalUnpaidInterest: Double
+    totalUnpaidInterest: Double,
+    totalUnpaidCharges: Double
 ) {
     Box(
         modifier = Modifier
@@ -183,6 +195,15 @@ private fun TotalDebtCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "Interés no cubierto registrado: ${formatCOP(totalUnpaidInterest)}",
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            if (totalUnpaidCharges > 0.0) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Seguros/cargos no cubiertos: ${formatCOP(totalUnpaidCharges)}",
                     color = Color.White.copy(alpha = 0.85f),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
@@ -351,6 +372,16 @@ private fun LoanCard(
                 }
             }
 
+            val monthlyFixedCharges = loan.monthlyInsuranceAmount + loan.monthlyFeeAmount
+            if (monthlyFixedCharges > 0.0) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Seguro/cargos en cuota: ${formatCOP(monthlyFixedCharges)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
+
             Spacer(Modifier.height(16.dp))
 
             lastPayment?.let { payment ->
@@ -427,10 +458,29 @@ private fun LastLoanPaymentSummary(payment: LoanPaymentEntity) {
             style = MaterialTheme.typography.bodySmall,
             color = Color.Gray
         )
+        val fixedChargesPaid = payment.insurancePaidAmount + payment.feePaidAmount
+        if (fixedChargesPaid > 0.0) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "Seguro/cargos: ${formatCOP(fixedChargesPaid)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
+        }
         if (payment.unpaidInterestAmount > 0.0) {
             Spacer(Modifier.height(4.dp))
             Text(
                 "Interés no cubierto: ${formatCOP(payment.unpaidInterestAmount)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = TrafficRed,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        val unpaidFixedCharges = payment.unpaidInsuranceAmount + payment.unpaidFeeAmount
+        if (unpaidFixedCharges > 0.0) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Seguro/cargos no cubiertos: ${formatCOP(unpaidFixedCharges)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = TrafficRed,
                 fontWeight = FontWeight.SemiBold
@@ -450,6 +500,8 @@ private fun AddLoanDialog(
         interestRate: Double,
         totalInstallments: Int,
         monthlyInstallment: Double,
+        monthlyInsurance: Double,
+        monthlyFee: Double,
         paymentDay: Int,
         linkedAccountId: String?
     ) -> Unit
@@ -459,6 +511,8 @@ private fun AddLoanDialog(
     var interestRate by remember { mutableStateOf("") }
     var totalInstallments by remember { mutableStateOf("") }
     var monthlyInstallment by remember { mutableStateOf("") }
+    var monthlyInsurance by remember { mutableStateOf("") }
+    var monthlyFee by remember { mutableStateOf("") }
     var paymentDay by remember { mutableStateOf("") }
 
     var expanded by remember { mutableStateOf(false) }
@@ -468,6 +522,10 @@ private fun AddLoanDialog(
     val parsedInterestRate = interestRate.toDoubleOrNull()
     val parsedInstallments = totalInstallments.toIntOrNull()
     val parsedMonthlyInstallment = monthlyInstallment.toDoubleOrNull()
+    val parsedMonthlyInsurance = monthlyInsurance.toDoubleOrNull()
+    val parsedMonthlyFee = monthlyFee.toDoubleOrNull()
+    val normalizedMonthlyInsurance = parsedMonthlyInsurance ?: 0.0
+    val normalizedMonthlyFee = parsedMonthlyFee ?: 0.0
     val parsedPaymentDay = paymentDay.toIntOrNull()
     val firstMonthInterest = if (parsedTotalAmount != null && parsedInterestRate != null) {
         parsedTotalAmount * parsedInterestRate.coerceAtLeast(0.0) / 100.0
@@ -478,9 +536,10 @@ private fun AddLoanDialog(
         parsedMonthlyInstallment != null &&
         firstMonthInterest != null &&
         firstMonthInterest > 0.0 &&
-        parsedMonthlyInstallment <= firstMonthInterest
+        parsedMonthlyInstallment <= firstMonthInterest + normalizedMonthlyInsurance + normalizedMonthlyFee
     ) {
-        "La cuota no cubre el interés estimado del primer mes (${formatCOP(firstMonthInterest)}). El saldo de capital no bajará."
+        val nonPrincipalAmount = firstMonthInterest + normalizedMonthlyInsurance + normalizedMonthlyFee
+        "La cuota no cubre interés + seguros/cargos estimados (${formatCOP(nonPrincipalAmount)}). El saldo de capital no bajará."
     } else {
         null
     }
@@ -488,6 +547,8 @@ private fun AddLoanDialog(
             parsedTotalAmount != null && parsedTotalAmount > 0.0 &&
             parsedInstallments != null && parsedInstallments > 0 &&
             parsedMonthlyInstallment != null && parsedMonthlyInstallment > 0.0 &&
+            (monthlyInsurance.isBlank() || (parsedMonthlyInsurance != null && parsedMonthlyInsurance >= 0.0)) &&
+            (monthlyFee.isBlank() || (parsedMonthlyFee != null && parsedMonthlyFee >= 0.0)) &&
             parsedPaymentDay != null && parsedPaymentDay in 1..31
 
     AlertDialog(
@@ -545,7 +606,29 @@ private fun AddLoanDialog(
                     OutlinedTextField(
                         value = monthlyInstallment,
                         onValueChange = { monthlyInstallment = it },
-                        label = { Text("Valor Cuota Mensual ($)") },
+                        label = { Text("Cuota mensual pactada ($)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = monthlyInsurance,
+                        onValueChange = { monthlyInsurance = it },
+                        label = { Text("Seguro mensual incluido (opcional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = monthlyFee,
+                        onValueChange = { monthlyFee = it },
+                        label = { Text("Otros cargos fijos mensuales (opcional)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -628,7 +711,17 @@ private fun AddLoanDialog(
                     val day = parsedPaymentDay ?: return@Button
 
                     if (canSave) {
-                        onConfirm(name, total, interest, installments, cuota, day, selectedAccount?.id)
+                        onConfirm(
+                            name,
+                            total,
+                            interest,
+                            installments,
+                            cuota,
+                            normalizedMonthlyInsurance,
+                            normalizedMonthlyFee,
+                            day,
+                            selectedAccount?.id
+                        )
                     }
                 },
                 enabled = canSave

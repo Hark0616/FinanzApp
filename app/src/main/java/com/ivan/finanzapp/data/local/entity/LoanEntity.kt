@@ -33,8 +33,12 @@ data class LoanEntity(
     val totalInstallments: Int,
     /** Cantidad de cuotas pagadas hasta el momento. */
     val paidInstallments: Int = 0,
-    /** Valor de la cuota mensual (capital + interés + seguros). */
+    /** Valor de la cuota mensual pactada (capital + interes + seguros/cargos). */
     val monthlyInstallmentAmount: Double,
+    /** Seguro mensual incluido en la cuota pactada. No reduce capital. */
+    val monthlyInsuranceAmount: Double = 0.0,
+    /** Cargos fijos mensuales incluidos en la cuota pactada. No reducen capital. */
+    val monthlyFeeAmount: Double = 0.0,
     /** Día del mes en que vence el pago de la cuota (1-31). */
     val paymentDay: Int,
     /** Timestamp de la próxima fecha límite de pago de la cuota. */
