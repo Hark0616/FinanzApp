@@ -389,8 +389,7 @@ fun RuleTrainerDialog(
             modifier = Modifier
                 .fillMaxWidth(0.95f)
                 .fillMaxHeight(0.9f)
-                .imePadding()
-                .animateContentSize(),
+                .imePadding(),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.background
         ) {
@@ -533,9 +532,7 @@ private fun Step1InputMessage(
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier
-            .fillMaxSize()
-            .animateContentSize()
+        modifier = Modifier.fillMaxSize()
     ) {
         AnimatedVisibility(
             visible = rawText.isBlank(),
