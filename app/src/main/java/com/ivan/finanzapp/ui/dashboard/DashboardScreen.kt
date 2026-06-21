@@ -395,7 +395,7 @@ private fun CreditCardSummaryCard(card: CreditCardSummary) {
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
-                    Text("Cuota mínima", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+                    Text("Pago mín. estimado", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
                     Text(formatCOP(card.minimumPayment), style = MaterialTheme.typography.bodyMedium)
                 }
                 Column(horizontalAlignment = Alignment.End) {
