@@ -5,11 +5,18 @@ import androidx.lifecycle.viewModelScope
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
+import com.ivan.finanzapp.data.local.dao.CreditCardDao
+import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
+import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
+import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
+import com.ivan.finanzapp.domain.model.AccountType
+import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.dashboard.TransactionWithCategory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -18,7 +25,10 @@ import javax.inject.Inject
 class TransactionsViewModel @Inject constructor(
     private val transactionDao: TransactionDao,
     private val categoryDao: CategoryDao,
-    private val accountDao: AccountDao
+    private val accountDao: AccountDao,
+    private val creditCardDao: CreditCardDao,
+    private val deferredPurchaseDao: DeferredPurchaseDao,
+    private val calculator: CreditCardCalculator
 ) : ViewModel() {
 
     val uiState: StateFlow<TransactionsUiState> = combine(
@@ -40,7 +50,8 @@ class TransactionsViewModel @Inject constructor(
         TransactionsUiState(
             isLoading = false,
             transactions = items,
-            categories = categories
+            categories = categories,
+            accounts = accounts
         )
     }.stateIn(
         scope = viewModelScope,
@@ -62,9 +73,134 @@ class TransactionsViewModel @Inject constructor(
         }
     }
 
+    fun updateTransactionAccount(transactionId: String, newAccountId: String?) {
+        viewModelScope.launch {
+            val tx = transactionDao.getById(transactionId) ?: return@launch
+            val oldAccountId = tx.accountId
+
+            if (oldAccountId == newAccountId) return@launch
+
+            // 1. Revertir el efecto en la cuenta anterior (si existía)
+            if (oldAccountId != null) {
+                val oldAccount = accountDao.getAccountById(oldAccountId)
+                if (oldAccount != null) {
+                    if (oldAccount.type == AccountType.TARJETA_CREDITO) {
+                        val card = creditCardDao.getByAccountId(oldAccountId)
+                        if (card != null) {
+                            if (tx.type == TransactionType.GASTO_TC) {
+                                deferredPurchaseDao.delete(tx.id)
+                                recalculateCardDebt(card.id)
+                            } else if (tx.type == TransactionType.PAGO_TC) {
+                                creditCardDao.adjustDebt(card.id, tx.amount)
+                            }
+                        }
+                    } else {
+                        // Cuenta normal
+                        if (tx.type == TransactionType.INGRESO || tx.type == TransactionType.PAGO_TC) {
+                            accountDao.adjustBalance(oldAccountId, -tx.amount)
+                        } else {
+                            accountDao.adjustBalance(oldAccountId, +tx.amount)
+                        }
+                    }
+                }
+            }
+
+            // 2. Determinar nuevo tipo de transacción y aplicar efecto en la nueva cuenta
+            var newType = tx.type
+            if (newAccountId != null) {
+                val newAccount = accountDao.getAccountById(newAccountId)
+                if (newAccount != null) {
+                    if (newAccount.type == AccountType.TARJETA_CREDITO) {
+                        newType = if (tx.type == TransactionType.INGRESO || tx.type == TransactionType.PAGO_TC) {
+                            TransactionType.PAGO_TC
+                        } else {
+                            TransactionType.GASTO_TC
+                        }
+
+                        val card = creditCardDao.getByAccountId(newAccountId)
+                        if (card != null) {
+                            if (newType == TransactionType.GASTO_TC) {
+                                val purchase = DeferredPurchaseEntity(
+                                    id = tx.id,
+                                    creditCardId = card.id,
+                                    description = tx.merchant ?: "Comercio clasificado",
+                                    totalAmount = tx.amount,
+                                    totalInstallments = 1,
+                                    paidInstallments = 0,
+                                    purchaseDate = tx.timestamp
+                                )
+                                deferredPurchaseDao.upsert(purchase)
+                                recalculateCardDebt(card.id)
+                            } else {
+                                val purchases = deferredPurchaseDao.observeByCardId(card.id).first()
+                                val result = calculator.distributePayment(tx.amount, purchases)
+                                for (updated in result.updatedPurchases) {
+                                    deferredPurchaseDao.upsert(updated)
+                                }
+                                for (deletedId in result.deletedPurchaseIds) {
+                                    deferredPurchaseDao.delete(deletedId)
+                                }
+                                recalculateCardDebt(card.id)
+                            }
+                        }
+                    } else {
+                        // Cuenta normal
+                        newType = if (tx.type == TransactionType.INGRESO || tx.type == TransactionType.PAGO_TC) {
+                            TransactionType.INGRESO
+                        } else {
+                            TransactionType.GASTO
+                        }
+
+                        if (newType == TransactionType.INGRESO) {
+                            accountDao.adjustBalance(newAccountId, +tx.amount)
+                        } else {
+                            accountDao.adjustBalance(newAccountId, -tx.amount)
+                        }
+                    }
+                }
+            }
+
+            // 3. Actualizar la transacción
+            transactionDao.update(tx.copy(accountId = newAccountId, type = newType))
+        }
+    }
+
+    private suspend fun recalculateCardDebt(cardId: String) {
+        val purchases = deferredPurchaseDao.observeByCardId(cardId).first()
+        val card = creditCardDao.observeAll().first().find { it.id == cardId } ?: return
+        val newDebt = calculator.totalDeferredDebt(purchases)
+        val updatedCard = card.copy(currentDebt = newDebt)
+        creditCardDao.update(updatedCard)
+    }
+
     fun deleteTransaction(transactionId: String) {
         viewModelScope.launch {
+            val tx = transactionDao.getById(transactionId)
+            if (tx != null && tx.accountId != null) {
+                val oldAccountId = tx.accountId
+                val oldAccount = accountDao.getAccountById(oldAccountId)
+                if (oldAccount != null) {
+                    if (oldAccount.type == AccountType.TARJETA_CREDITO) {
+                        val card = creditCardDao.getByAccountId(oldAccountId)
+                        if (card != null) {
+                            if (tx.type == TransactionType.GASTO_TC) {
+                                deferredPurchaseDao.delete(tx.id)
+                                recalculateCardDebt(card.id)
+                            } else if (tx.type == TransactionType.PAGO_TC) {
+                                creditCardDao.adjustDebt(card.id, tx.amount)
+                            }
+                        }
+                    } else {
+                        if (tx.type == TransactionType.INGRESO || tx.type == TransactionType.PAGO_TC) {
+                            accountDao.adjustBalance(oldAccountId, -tx.amount)
+                        } else {
+                            accountDao.adjustBalance(oldAccountId, +tx.amount)
+                        }
+                    }
+                }
+            }
             transactionDao.delete(transactionId)
         }
     }
 }
+

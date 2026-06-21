@@ -3,9 +3,11 @@ package com.ivan.finanzapp.ui.transactions
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.CategoryEntity
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.components.AmountText
@@ -39,17 +42,27 @@ fun TransactionsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
-    var filterPendingOnly by remember { mutableStateOf(false) }
+    
+    enum class TransactionFilter {
+        ALL, PENDING_REVIEW, UNCLASSIFIED
+    }
+    var activeFilter by remember { mutableStateOf(TransactionFilter.ALL) }
 
     var selectedTransactionForEdit by remember { mutableStateOf<TransactionWithCategory?>(null) }
     var categoryDialogExpanded by remember { mutableStateOf(false) }
 
-    val filteredTransactions = remember(state.transactions, searchQuery, filterPendingOnly) {
+    val filteredTransactions = remember(state.transactions, searchQuery, activeFilter) {
         state.transactions.filter { item ->
             val matchesSearch = item.transaction.merchant?.contains(searchQuery, ignoreCase = true) == true ||
-                    item.category?.name?.contains(searchQuery, ignoreCase = true) == true
-            val matchesPending = !filterPendingOnly || item.transaction.needsReview
-            matchesSearch && matchesPending
+                    item.category?.name?.contains(searchQuery, ignoreCase = true) == true ||
+                    item.accountName?.contains(searchQuery, ignoreCase = true) == true
+
+            val matchesFilter = when (activeFilter) {
+                TransactionFilter.ALL -> true
+                TransactionFilter.PENDING_REVIEW -> item.transaction.needsReview
+                TransactionFilter.UNCLASSIFIED -> item.transaction.accountId == null
+            }
+            matchesSearch && matchesFilter
         }
     }
 
@@ -72,35 +85,48 @@ fun TransactionsScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    label = { Text("Buscar comercio o categoría...") },
+                    label = { Text("Buscar comercio, categoría o cuenta...") },
                     leadingIcon = { Icon(Icons.Default.Search, null) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                // Filtro rápido para transacciones pendientes de revisión
+                // Filtros rápidos
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     FilterChip(
-                        selected = !filterPendingOnly,
-                        onClick = { filterPendingOnly = false },
+                        selected = activeFilter == TransactionFilter.ALL,
+                        onClick = { activeFilter = TransactionFilter.ALL },
                         label = { Text("Todos") },
-                        leadingIcon = if (!filterPendingOnly) {
+                        leadingIcon = if (activeFilter == TransactionFilter.ALL) {
                             { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                         } else null
                     )
                     Spacer(Modifier.width(8.dp))
                     FilterChip(
-                        selected = filterPendingOnly,
-                        onClick = { filterPendingOnly = true },
-                        label = { Text("Pendientes de revisión") },
-                        leadingIcon = if (filterPendingOnly) {
+                        selected = activeFilter == TransactionFilter.PENDING_REVIEW,
+                        onClick = { activeFilter = TransactionFilter.PENDING_REVIEW },
+                        label = { Text("Revisión IA") },
+                        leadingIcon = if (activeFilter == TransactionFilter.PENDING_REVIEW) {
                             { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                         } else {
                             { Icon(Icons.Default.Warning, null, tint = TrafficYellow, modifier = Modifier.size(16.dp)) }
+                        }
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    FilterChip(
+                        selected = activeFilter == TransactionFilter.UNCLASSIFIED,
+                        onClick = { activeFilter = TransactionFilter.UNCLASSIFIED },
+                        label = { Text("Pendientes de cuenta") },
+                        leadingIcon = if (activeFilter == TransactionFilter.UNCLASSIFIED) {
+                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                        } else {
+                            { Icon(Icons.Default.HelpOutline, null, modifier = Modifier.size(16.dp)) }
                         }
                     )
                 }
@@ -151,122 +177,182 @@ fun TransactionsScreen(
             }
         }
 
-        // Diálogo para cambiar de categoría o eliminar transacción
+        // Diálogo para administrar movimiento (cambiar de categoría, asociar cuenta o eliminar)
         if (categoryDialogExpanded && selectedTransactionForEdit != null) {
-            val transactionItem = selectedTransactionForEdit!!
-            AlertDialog(
-                onDismissRequest = {
-                    categoryDialogExpanded = false
-                    selectedTransactionForEdit = null
-                },
-                title = { Text("Administrar Movimiento") },
-                text = {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            "Comercio: ${transactionItem.transaction.merchant ?: "Desconocido"}",
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            "Monto: ${formatCOP(transactionItem.transaction.amount)} (${transactionItem.transaction.type.name})"
-                        )
-                        Text(
-                            "Cuenta: ${transactionItem.accountName ?: "Sin asignar"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
-                        )
-
-                        Spacer(Modifier.height(8.dp))
-
-                        Text("Seleccionar Categoría:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-
-                        // Lista rápida de categorías
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp)
+            val transactionItem = state.transactions.find { it.transaction.id == selectedTransactionForEdit?.transaction?.id }
+            if (transactionItem == null) {
+                categoryDialogExpanded = false
+                selectedTransactionForEdit = null
+            } else {
+                AlertDialog(
+                    onDismissRequest = {
+                        categoryDialogExpanded = false
+                        selectedTransactionForEdit = null
+                    },
+                    title = { Text("Administrar Movimiento") },
+                    text = {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            item {
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            viewModel.updateTransactionCategory(transactionItem.transaction.id, null)
-                                            categoryDialogExpanded = false
-                                            selectedTransactionForEdit = null
+                            Text(
+                                "Comercio: ${transactionItem.transaction.merchant ?: "Desconocido"}",
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "Monto: ${formatCOP(transactionItem.transaction.amount)} (${transactionItem.transaction.type.name})"
+                            )
+                            Text(
+                                "Cuenta actual: ${transactionItem.accountName ?: "Sin asignar (Pendiente)"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (transactionItem.transaction.accountId == null) MaterialTheme.colorScheme.error else Color.Gray
+                            )
+
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+                            // Sección de Cuenta
+                            Text("Asociar Cuenta:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(110.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                    .padding(4.dp)
+                            ) {
+                                item {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.updateTransactionAccount(transactionItem.transaction.id, null)
+                                            }
+                                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Clear, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Sin cuenta (Pendiente)", fontSize = 14.sp)
+                                        if (transactionItem.transaction.accountId == null) {
+                                            Spacer(Modifier.weight(1f))
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
                                         }
-                                        .padding(vertical = 8.dp, horizontal = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.Clear, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Sin categoría")
-                                }
-                                HorizontalDivider()
-                            }
-                            items(state.categories) { category ->
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            viewModel.updateTransactionCategory(
-                                                transactionItem.transaction.id,
-                                                category.id
-                                            )
-                                            categoryDialogExpanded = false
-                                            selectedTransactionForEdit = null
-                                        }
-                                        .padding(vertical = 8.dp, horizontal = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(12.dp)
-                                            .background(
-                                                color = runCatching { Color(android.graphics.Color.parseColor(category.color)) }
-                                                    .getOrDefault(Color.Gray),
-                                                shape = RoundedCornerShape(50)
-                                            )
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(category.name)
-                                    if (category.id == transactionItem.transaction.categoryId) {
-                                        Spacer(Modifier.weight(1f))
-                                        Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
                                     }
+                                    HorizontalDivider()
                                 }
-                                HorizontalDivider()
+                                items(state.accounts) { account ->
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.updateTransactionAccount(transactionItem.transaction.id, account.id)
+                                            }
+                                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(account.name, fontSize = 14.sp)
+                                        if (account.id == transactionItem.transaction.accountId) {
+                                            Spacer(Modifier.weight(1f))
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+                                    HorizontalDivider()
+                                }
+                            }
+
+                            Spacer(Modifier.height(4.dp))
+
+                            // Sección de Categoría
+                            Text("Seleccionar Categoría:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(110.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                    .padding(4.dp)
+                            ) {
+                                item {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.updateTransactionCategory(transactionItem.transaction.id, null)
+                                            }
+                                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Clear, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Sin categoría", fontSize = 14.sp)
+                                        if (transactionItem.transaction.categoryId == null) {
+                                            Spacer(Modifier.weight(1f))
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+                                    HorizontalDivider()
+                                }
+                                items(state.categories) { category ->
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.updateTransactionCategory(
+                                                    transactionItem.transaction.id,
+                                                    category.id
+                                                )
+                                            }
+                                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .background(
+                                                    color = runCatching { Color(android.graphics.Color.parseColor(category.color)) }
+                                                        .getOrDefault(Color.Gray),
+                                                    shape = RoundedCornerShape(50)
+                                                )
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(category.name, fontSize = 14.sp)
+                                        if (category.id == transactionItem.transaction.categoryId) {
+                                            Spacer(Modifier.weight(1f))
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+                                    HorizontalDivider()
+                                }
                             }
                         }
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            viewModel.deleteTransaction(transactionItem.transaction.id)
-                            categoryDialogExpanded = false
-                            selectedTransactionForEdit = null
-                        },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Icon(Icons.Default.Delete, null)
-                        Spacer(Modifier.width(4.dp))
-                        Text("Eliminar")
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = {
-                            categoryDialogExpanded = false
-                            selectedTransactionForEdit = null
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                viewModel.deleteTransaction(transactionItem.transaction.id)
+                                categoryDialogExpanded = false
+                                selectedTransactionForEdit = null
+                            },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(Icons.Default.Delete, null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Eliminar")
                         }
-                    ) {
-                        Text("Cerrar")
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                categoryDialogExpanded = false
+                                selectedTransactionForEdit = null
+                            }
+                        ) {
+                            Text("Cerrar")
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     }
 }
@@ -277,7 +363,7 @@ private fun TransactionItemRow(
     onClick: () -> Unit,
     onConfirmClick: () -> Unit
 ) {
-    val isIncome = item.transaction.type == TransactionType.INGRESO
+    val isIncome = item.transaction.type == TransactionType.INGRESO || item.transaction.type == TransactionType.PAGO_TC
     val date = Instant.ofEpochMilli(item.transaction.timestamp)
         .atZone(ZoneId.systemDefault())
         .toLocalDateTime()
@@ -310,9 +396,10 @@ private fun TransactionItemRow(
                         CategoryChip(name = item.category.name, colorHex = item.category.color)
                     }
                     Text(
-                        item.accountName ?: "Sin cuenta",
+                        item.accountName ?: "Sin clasificar (Cuenta)",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.Gray
+                        color = if (item.transaction.accountId == null) MaterialTheme.colorScheme.error else Color.Gray,
+                        fontWeight = if (item.transaction.accountId == null) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
             }
@@ -327,6 +414,35 @@ private fun TransactionItemRow(
                     formattedDate,
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.Gray
+                )
+            }
+        }
+
+        // Mostrar alerta de que no tiene cuenta asignada
+        if (item.transaction.accountId == null) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.HelpOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Pendiente por clasificar (Sin Cuenta)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+                Text(
+                    "Asociar cuenta",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.clickable { onClick() }
                 )
             }
         }
@@ -365,3 +481,4 @@ private fun TransactionItemRow(
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 }
+
