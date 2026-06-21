@@ -6,8 +6,10 @@ import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.remote.LocalAiClassifier
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
+import com.ivan.finanzapp.data.local.dao.CustomRuleDao
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.CreditCardEntity
+import com.ivan.finanzapp.data.local.entity.CustomRuleEntity
 import com.ivan.finanzapp.domain.model.AccountType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,35 +27,44 @@ class SettingsViewModel @Inject constructor(
     private val securePrefs: SecurePrefs,
     private val accountDao: AccountDao,
     private val creditCardDao: CreditCardDao,
+    private val customRuleDao: CustomRuleDao,
     private val localAiClassifier: LocalAiClassifier
 ) : ViewModel() {
 
     private val _isAddAccountDialogVisible = MutableStateFlow(false)
     private val _isProcessingDialogVisible = MutableStateFlow(false)
+    private val _isCustomRulesDialogVisible = MutableStateFlow(false)
     private val _isSavedSuccess = MutableStateFlow(false)
     private val _isLocalAiPrefChanged = MutableStateFlow(false)
     private val _processingModeChanged = MutableStateFlow(false)
 
     val uiState: StateFlow<SettingsUiState> = combine(
         accountDao.observeAccounts(),
+        customRuleDao.observeAll(),
         _isAddAccountDialogVisible,
         _isProcessingDialogVisible,
+        _isCustomRulesDialogVisible,
         _isSavedSuccess,
         _isLocalAiPrefChanged,
         _processingModeChanged
     ) { flows ->
         @Suppress("UNCHECKED_CAST")
         val accounts = flows[0] as List<AccountEntity>
-        val isAddDialogVisible = flows[1] as Boolean
-        val isProcDialogVisible = flows[2] as Boolean
-        val isSavedSuccess = flows[3] as Boolean
+        @Suppress("UNCHECKED_CAST")
+        val customRules = flows[1] as List<CustomRuleEntity>
+        val isAddDialogVisible = flows[2] as Boolean
+        val isProcDialogVisible = flows[3] as Boolean
+        val isCustomRulesVisible = flows[4] as Boolean
+        val isSavedSuccess = flows[5] as Boolean
         val apiKey = securePrefs.getOpenRouterApiKey() ?: ""
         SettingsUiState(
             isLoading = false,
             apiKey = apiKey,
             accounts = accounts,
+            customRules = customRules,
             isAddAccountDialogVisible = isAddDialogVisible,
             isProcessingDialogVisible = isProcDialogVisible,
+            isCustomRulesDialogVisible = isCustomRulesVisible,
             isSavedSuccess = isSavedSuccess,
             isLocalAiSupported = localAiClassifier.isLocalAiSupported(),
             isLocalAiEnabled = securePrefs.isLocalAiEnabled(),
@@ -67,6 +78,22 @@ class SettingsViewModel @Inject constructor(
 
     fun toggleProcessingDialog(visible: Boolean) {
         _isProcessingDialogVisible.update { visible }
+    }
+
+    fun toggleCustomRulesDialog(visible: Boolean) {
+        _isCustomRulesDialogVisible.update { visible }
+    }
+
+    fun saveCustomRule(rule: CustomRuleEntity) {
+        viewModelScope.launch {
+            customRuleDao.upsert(rule)
+        }
+    }
+
+    fun deleteCustomRule(id: String) {
+        viewModelScope.launch {
+            customRuleDao.delete(id)
+        }
     }
 
     fun setNotificationProcessingMode(mode: String) {

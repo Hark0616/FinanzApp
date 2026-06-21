@@ -65,4 +65,7 @@ object DatabaseModule {
 
     @Provides
     fun provideAssetDao(db: AppDatabase): AssetDao = db.assetDao()
+
+    @Provides
+    fun provideCustomRuleDao(db: AppDatabase): com.ivan.finanzapp.data.local.dao.CustomRuleDao = db.customRuleDao()
 }

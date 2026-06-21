@@ -27,6 +27,8 @@ import com.ivan.finanzapp.data.local.entity.MerchantCategoryMappingEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.data.local.entity.AssetEntity
 import com.ivan.finanzapp.data.local.dao.AssetDao
+import com.ivan.finanzapp.data.local.entity.CustomRuleEntity
+import com.ivan.finanzapp.data.local.dao.CustomRuleDao
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
@@ -39,9 +41,10 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         LoanEntity::class,
         LoanPaymentEntity::class,
         DeferredPurchaseEntity::class,
-        AssetEntity::class
+        AssetEntity::class,
+        CustomRuleEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -56,6 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun loanPaymentDao(): LoanPaymentDao
     abstract fun deferredPurchaseDao(): DeferredPurchaseDao
     abstract fun assetDao(): AssetDao
+    abstract fun customRuleDao(): CustomRuleDao
 
 
     companion object {
@@ -95,6 +99,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `custom_rules` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `regexPattern` TEXT NOT NULL,
+                        `transactionType` TEXT NOT NULL,
+                        `bankSource` TEXT NOT NULL,
+                        `amountFormatType` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         /**
          * Crea (o retorna) la instancia única de la base de datos, cifrada
          * con SQLCipher usando [passphrase].
@@ -115,7 +138,7 @@ abstract class AppDatabase : RoomDatabase() {
             val factory: SupportSQLiteOpenHelper.Factory = SupportOpenHelperFactory(passphrase)
             return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_5_6)
+                .addMigrations(MIGRATION_5_6, MIGRATION_6_7)
                 .build()
         }
     }
