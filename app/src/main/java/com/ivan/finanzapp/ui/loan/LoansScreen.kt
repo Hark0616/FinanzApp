@@ -119,7 +119,7 @@ fun LoansScreen(
                     Text(
                         "¿Confirmas el pago de la cuota de ${formatCOP(loan.monthlyInstallmentAmount)} " +
                                 "para el crédito \"${loan.name}\"? Esto registrará un movimiento de gasto y " +
-                                "reducirá la deuda restante." +
+                                "aplicará primero el interés estimado; el excedente reducirá el saldo de capital." +
                                 if (loan.linkedAccountId != null) "\n\nSe debitará automáticamente del saldo de la cuenta vinculada." else ""
                     )
                 },
