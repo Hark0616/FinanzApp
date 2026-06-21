@@ -87,16 +87,24 @@ class TransactionProcessor @Inject constructor(
         // Paso 2: fallback de IA si las reglas no matchearon
         if (parsed == null) {
             val mode = securePrefs.getNotificationProcessingMode()
-            if (mode == SecurePrefs.MODE_LOCAL_AI) {
-                // Intentar con IA local en dispositivo (ej. Gemini Nano en S26 Ultra)
+            if (mode == SecurePrefs.MODE_LOCAL_AI || mode == SecurePrefs.MODE_PARSER) {
+                // Fallback 1: Intentar con IA local en dispositivo (ej. Gemini Nano en S26 Ultra)
                 val localResult = localAiClassifier.classifyLocally(packageName, title, text)
                 if (localResult != null) {
                     parsed = localResult.first
                     aiCategoryName = localResult.second
                     usedAi = true
+                } else if (mode == SecurePrefs.MODE_PARSER) {
+                    // Fallback 2: Si falla o no está disponible la IA local, recurrir a la nube
+                    val aiResult = aiClassifier.classifyWithCategory(packageName, title, text)
+                    if (aiResult != null) {
+                        parsed = aiResult.first
+                        aiCategoryName = aiResult.second
+                        usedAi = true
+                    }
                 }
             } else if (mode == SecurePrefs.MODE_CLOUD_AI) {
-                // Fallback a IA en la nube (OpenRouter)
+                // Fallback directo a IA en la nube (OpenRouter) sin probar la IA local
                 val aiResult = aiClassifier.classifyWithCategory(packageName, title, text)
                 if (aiResult != null) {
                     parsed = aiResult.first

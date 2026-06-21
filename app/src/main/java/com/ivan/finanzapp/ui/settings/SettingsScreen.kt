@@ -80,9 +80,9 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 val modeDesc = when (state.processingMode) {
-                                    SecurePrefs.MODE_PARSER -> "Reglas locales de la App"
-                                    SecurePrefs.MODE_LOCAL_AI -> "Inteligencia Artificial local (Gemini Nano)"
-                                    SecurePrefs.MODE_CLOUD_AI -> "Inteligencia Artificial en la nube (Gemini Flash)"
+                                    SecurePrefs.MODE_PARSER -> "Reglas locales (con asistencia de IA)"
+                                    SecurePrefs.MODE_LOCAL_AI -> "Solo reglas e IA local"
+                                    SecurePrefs.MODE_CLOUD_AI -> "Solo reglas e IA en la nube"
                                     else -> "Desconocido"
                                 }
                                 Text(
@@ -222,12 +222,12 @@ private fun NotificationProcessingDialog(
                         Spacer(Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "Reglas Locales de la App",
+                                text = "Reglas Locales (con Asistencia de IA)",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Procesamiento local ultrarrápido y 100% privado basado en algoritmos nativos.",
+                                text = "Procesamiento por reglas. Si fallan, recurre a IA Local (Gemini Nano) y, de ser necesario, a IA en la Nube.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -265,7 +265,7 @@ private fun NotificationProcessingDialog(
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "IA Local en Dispositivo",
+                                    text = "Solo Reglas Locales e IA Local",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = if (state.isLocalAiSupported) Color.Unspecified else Color.Gray
@@ -286,9 +286,9 @@ private fun NotificationProcessingDialog(
                                 }
                             }
                             val descText = if (state.isLocalAiSupported) {
-                                "Usa la NPU de tu dispositivo (Gemini Nano) para interpretar notificaciones complejas sin internet."
+                                "Procesamiento por reglas con fallback únicamente a IA Local (Gemini Nano) para total privacidad offline."
                             } else {
-                                "Requiere un dispositivo premium con NPU integrada (ej. Galaxy S26 Ultra / Pixel 8+)."
+                                "IA local requiere un dispositivo premium con NPU integrada (ej. Galaxy S26 Ultra / Pixel 8+)."
                             }
                             Text(
                                 text = descText,
@@ -321,12 +321,12 @@ private fun NotificationProcessingDialog(
                         Spacer(Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "IA en la Nube (Gemini Flash)",
+                                text = "Solo Reglas Locales e IA en la Nube",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Usa modelos en la nube mediante OpenRouter para máxima precisión de extracción.",
+                                text = "Procesamiento por reglas con fallback directo a IA en la nube, saltando la IA local.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
