@@ -29,6 +29,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Registrar shortcuts dinámicos al iniciar la app
+        ShortcutsHelper.registerShortcuts(this)
+
         setContent {
             FinanzAppTheme {
                 val navController = rememberNavController()
