@@ -40,6 +40,19 @@ class LoanCalculatorTest {
     }
 
     @Test
+    fun principalPaidSubtractsInsuranceAndFeesBeforePrincipal() {
+        val principal = calculator.principalPaid(
+            remainingAmount = 1_000_000.0,
+            monthlyInterestRate = 2.0,
+            monthlyInstallmentAmount = 100_000.0,
+            monthlyInsuranceAmount = 10_000.0,
+            monthlyFeeAmount = 5_000.0
+        )
+
+        assertEquals(65_000.0, principal, MONEY_DELTA)
+    }
+
+    @Test
     fun principalPaidUsesFullInstallmentWhenInterestRateIsZero() {
         val principal = calculator.principalPaid(
             remainingAmount = 1_000_000.0,
@@ -90,6 +103,54 @@ class LoanCalculatorTest {
         assertEquals(0.0, progress.unpaidInterest, MONEY_DELTA)
         assertEquals(80_000.0, progress.principalPaid, MONEY_DELTA)
         assertEquals(100_000.0, progress.paymentAmount, MONEY_DELTA)
+    }
+
+    @Test
+    fun applyInstallmentPaymentKeepsInsuranceAndFeesOutOfPrincipal() {
+        val loan = loan(
+            remainingAmount = 1_000_000.0,
+            monthlyInterestRate = 2.0,
+            monthlyInstallmentAmount = 100_000.0,
+            monthlyInsuranceAmount = 10_000.0,
+            monthlyFeeAmount = 5_000.0
+        )
+
+        val progress = calculator.applyInstallmentPayment(loan)
+
+        assertEquals(935_000.0, progress.remainingAmount, MONEY_DELTA)
+        assertEquals(10_000.0, progress.scheduledInsurance, MONEY_DELTA)
+        assertEquals(10_000.0, progress.insurancePaid, MONEY_DELTA)
+        assertEquals(0.0, progress.unpaidInsurance, MONEY_DELTA)
+        assertEquals(5_000.0, progress.scheduledFee, MONEY_DELTA)
+        assertEquals(5_000.0, progress.feePaid, MONEY_DELTA)
+        assertEquals(0.0, progress.unpaidFee, MONEY_DELTA)
+        assertEquals(20_000.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(65_000.0, progress.principalPaid, MONEY_DELTA)
+        assertEquals(100_000.0, progress.paymentAmount, MONEY_DELTA)
+    }
+
+    @Test
+    fun applyInstallmentPaymentTracksUnpaidFixedChargesBeforeInterest() {
+        val loan = loan(
+            remainingAmount = 1_000_000.0,
+            monthlyInterestRate = 2.0,
+            monthlyInstallmentAmount = 12_000.0,
+            monthlyInsuranceAmount = 10_000.0,
+            monthlyFeeAmount = 5_000.0
+        )
+
+        val progress = calculator.applyInstallmentPayment(loan)
+
+        assertEquals(1_000_000.0, progress.remainingAmount, MONEY_DELTA)
+        assertEquals(10_000.0, progress.insurancePaid, MONEY_DELTA)
+        assertEquals(0.0, progress.unpaidInsurance, MONEY_DELTA)
+        assertEquals(2_000.0, progress.feePaid, MONEY_DELTA)
+        assertEquals(3_000.0, progress.unpaidFee, MONEY_DELTA)
+        assertEquals(20_000.0, progress.interestAccrued, MONEY_DELTA)
+        assertEquals(0.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(20_000.0, progress.unpaidInterest, MONEY_DELTA)
+        assertEquals(0.0, progress.principalPaid, MONEY_DELTA)
+        assertEquals(12_000.0, progress.paymentAmount, MONEY_DELTA)
     }
 
     @Test
@@ -191,6 +252,8 @@ class LoanCalculatorTest {
         remainingAmount: Double,
         monthlyInterestRate: Double,
         monthlyInstallmentAmount: Double,
+        monthlyInsuranceAmount: Double = 0.0,
+        monthlyFeeAmount: Double = 0.0,
         paidInstallments: Int = 0
     ) = LoanEntity(
         id = "loan",
@@ -201,6 +264,8 @@ class LoanCalculatorTest {
         totalInstallments = 12,
         paidInstallments = paidInstallments,
         monthlyInstallmentAmount = monthlyInstallmentAmount,
+        monthlyInsuranceAmount = monthlyInsuranceAmount,
+        monthlyFeeAmount = monthlyFeeAmount,
         paymentDay = 15,
         nextPaymentDate = 0L
     )

@@ -16,6 +16,9 @@ interface LoanPaymentDao {
     @Query("SELECT COALESCE(SUM(unpaidInterestAmount), 0.0) FROM loan_payments")
     fun observeTotalUnpaidInterest(): Flow<Double>
 
+    @Query("SELECT COALESCE(SUM(unpaidInsuranceAmount + unpaidFeeAmount), 0.0) FROM loan_payments")
+    fun observeTotalUnpaidCharges(): Flow<Double>
+
     @Query(
         """
         SELECT * FROM loan_payments AS payment

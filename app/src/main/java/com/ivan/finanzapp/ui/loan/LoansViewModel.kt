@@ -6,6 +6,7 @@ import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.entity.LoanEntity
+import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.usecase.LoanPaymentRegistrar
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -31,23 +32,34 @@ class LoansViewModel @Inject constructor(
 
     private val _isAddDialogVisible = MutableStateFlow(false)
 
+    private val paymentAudit = combine(
+        loanPaymentDao.observeLatestByLoan(),
+        loanPaymentDao.observeTotalUnpaidInterest(),
+        loanPaymentDao.observeTotalUnpaidCharges()
+    ) { loanPayments, totalUnpaidInterest, totalUnpaidCharges ->
+        LoanPaymentAudit(
+            latestPaymentsByLoanId = loanPayments.associateBy { it.loanId },
+            totalUnpaidInterest = totalUnpaidInterest,
+            totalUnpaidCharges = totalUnpaidCharges
+        )
+    }
+
     val uiState: StateFlow<LoansUiState> = combine(
         loanDao.observeAll(),
         accountDao.observeAccounts(),
-        loanPaymentDao.observeLatestByLoan(),
-        loanPaymentDao.observeTotalUnpaidInterest(),
+        paymentAudit,
         _isAddDialogVisible
-    ) { loans, accounts, loanPayments, totalUnpaidInterest, isAddDialogVisible ->
+    ) { loans, accounts, paymentAudit, isAddDialogVisible ->
         val totalDebt = loans.sumOf { it.remainingAmount }
         val savingsAccounts = accounts.filter { it.type != AccountType.TARJETA_CREDITO }
-        val latestPaymentsByLoanId = loanPayments.associateBy { it.loanId }
         LoansUiState(
             isLoading = false,
             loans = loans,
             accounts = savingsAccounts,
-            latestPaymentsByLoanId = latestPaymentsByLoanId,
+            latestPaymentsByLoanId = paymentAudit.latestPaymentsByLoanId,
             totalDebt = totalDebt,
-            totalUnpaidInterest = totalUnpaidInterest,
+            totalUnpaidInterest = paymentAudit.totalUnpaidInterest,
+            totalUnpaidCharges = paymentAudit.totalUnpaidCharges,
             isAddDialogVisible = isAddDialogVisible
         )
     }.stateIn(
@@ -66,6 +78,8 @@ class LoansViewModel @Inject constructor(
         interestRate: Double,
         totalInstallments: Int,
         monthlyInstallment: Double,
+        monthlyInsurance: Double,
+        monthlyFee: Double,
         paymentDay: Int,
         linkedAccountId: String?
     ) {
@@ -94,6 +108,8 @@ class LoansViewModel @Inject constructor(
                 totalInstallments = normalizedInstallments,
                 paidInstallments = 0,
                 monthlyInstallmentAmount = monthlyInstallment,
+                monthlyInsuranceAmount = monthlyInsurance.coerceAtLeast(0.0),
+                monthlyFeeAmount = monthlyFee.coerceAtLeast(0.0),
                 paymentDay = normalizedPaymentDay,
                 nextPaymentDate = nextPaymentDateMillis,
                 linkedAccountId = linkedAccountId
@@ -115,3 +131,9 @@ class LoansViewModel @Inject constructor(
         }
     }
 }
+
+private data class LoanPaymentAudit(
+    val latestPaymentsByLoanId: Map<String, LoanPaymentEntity>,
+    val totalUnpaidInterest: Double,
+    val totalUnpaidCharges: Double
+)
