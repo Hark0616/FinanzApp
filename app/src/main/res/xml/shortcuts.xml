@@ -3,7 +3,7 @@
     <shortcut
         android:shortcutId="add_transaction"
         android:enabled="true"
-        android:icon="@drawable/ic_shortcut_add"
+        android:icon="@drawable/ic_shortcut_add_adaptive"
         android:shortcutShortLabel="@string/shortcut_add_label"
         android:shortcutLongLabel="@string/shortcut_add_long_label">
         <intent
@@ -15,7 +15,7 @@
     <shortcut
         android:shortcutId="view_unclassified"
         android:enabled="true"
-        android:icon="@drawable/ic_shortcut_unclassified"
+        android:icon="@drawable/ic_shortcut_unclassified_adaptive"
         android:shortcutShortLabel="@string/shortcut_unclassified_label"
         android:shortcutLongLabel="@string/shortcut_unclassified_long_label">
         <intent

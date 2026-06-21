@@ -16,7 +16,7 @@ object ShortcutsHelper {
         val addShortcut = ShortcutInfoCompat.Builder(context, "add_transaction")
             .setShortLabel(context.getString(R.string.shortcut_add_label))
             .setLongLabel(context.getString(R.string.shortcut_add_long_label))
-            .setIcon(IconCompat.createWithResource(context, R.drawable.ic_shortcut_add))
+            .setIcon(IconCompat.createWithResource(context, R.drawable.ic_shortcut_add_adaptive))
             .setIntent(addIntent)
             .build()
 
@@ -27,7 +27,7 @@ object ShortcutsHelper {
         val unclassifiedShortcut = ShortcutInfoCompat.Builder(context, "view_unclassified")
             .setShortLabel(context.getString(R.string.shortcut_unclassified_label))
             .setLongLabel(context.getString(R.string.shortcut_unclassified_long_label))
-            .setIcon(IconCompat.createWithResource(context, R.drawable.ic_shortcut_unclassified))
+            .setIcon(IconCompat.createWithResource(context, R.drawable.ic_shortcut_unclassified_adaptive))
             .setIntent(unclassifiedIntent)
             .build()
 
