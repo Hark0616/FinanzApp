@@ -1,0 +1,66 @@
+package com.ivan.finanzapp.domain.calculator
+
+import com.ivan.finanzapp.data.local.entity.LoanEntity
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * Calculos financieros puros para creditos y prestamos.
+ */
+@Singleton
+class LoanCalculator @Inject constructor() {
+
+    fun monthlyInterestAmount(remainingAmount: Double, monthlyInterestRate: Double): Double {
+        if (remainingAmount <= 0.0) return 0.0
+        val monthlyRate = monthlyInterestRate.coerceAtLeast(0.0) / 100.0
+        return remainingAmount * monthlyRate
+    }
+
+    fun principalPaid(
+        remainingAmount: Double,
+        monthlyInterestRate: Double,
+        monthlyInstallmentAmount: Double
+    ): Double {
+        if (remainingAmount <= 0.0 || monthlyInstallmentAmount <= 0.0) return 0.0
+        val interest = monthlyInterestAmount(remainingAmount, monthlyInterestRate)
+        return (monthlyInstallmentAmount - interest)
+            .coerceAtLeast(0.0)
+            .coerceAtMost(remainingAmount)
+    }
+
+    fun applyInstallmentPayment(loan: LoanEntity): LoanPaymentProgress {
+        if (loan.remainingAmount <= 0.0 || loan.monthlyInstallmentAmount <= 0.0) {
+            return LoanPaymentProgress(
+                remainingAmount = loan.remainingAmount.coerceAtLeast(0.0),
+                paidInstallments = loan.paidInstallments,
+                interestPaid = 0.0,
+                principalPaid = 0.0,
+                paymentAmount = 0.0
+            )
+        }
+
+        val interestPaid = monthlyInterestAmount(loan.remainingAmount, loan.monthlyInterestRate)
+            .coerceAtMost(loan.monthlyInstallmentAmount.coerceAtLeast(0.0))
+        val principalPaid = principalPaid(
+            remainingAmount = loan.remainingAmount,
+            monthlyInterestRate = loan.monthlyInterestRate,
+            monthlyInstallmentAmount = loan.monthlyInstallmentAmount
+        )
+
+        return LoanPaymentProgress(
+            remainingAmount = (loan.remainingAmount - principalPaid).coerceAtLeast(0.0),
+            paidInstallments = loan.paidInstallments + 1,
+            interestPaid = interestPaid,
+            principalPaid = principalPaid,
+            paymentAmount = interestPaid + principalPaid
+        )
+    }
+}
+
+data class LoanPaymentProgress(
+    val remainingAmount: Double,
+    val paidInstallments: Int,
+    val interestPaid: Double,
+    val principalPaid: Double,
+    val paymentAmount: Double
+)

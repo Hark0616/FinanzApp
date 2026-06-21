@@ -7,6 +7,7 @@ import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
+import com.ivan.finanzapp.domain.calculator.LoanCalculator
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.model.TransactionType
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,7 +28,8 @@ import javax.inject.Inject
 class LoansViewModel @Inject constructor(
     private val loanDao: LoanDao,
     private val accountDao: AccountDao,
-    private val transactionDao: TransactionDao
+    private val transactionDao: TransactionDao,
+    private val loanCalculator: LoanCalculator
 ) : ViewModel() {
 
     private val _isAddDialogVisible = MutableStateFlow(false)
@@ -99,13 +101,8 @@ class LoansViewModel @Inject constructor(
 
     fun payInstallment(loan: LoanEntity) {
         viewModelScope.launch {
-            val newPaidInstallments = loan.paidInstallments + 1
-            // Si ya se pagaron todas las cuotas, la deuda restante es 0
-            val newRemainingAmount = if (newPaidInstallments >= loan.totalInstallments) {
-                0.0
-            } else {
-                (loan.remainingAmount - loan.monthlyInstallmentAmount).coerceAtLeast(0.0)
-            }
+            val paymentProgress = loanCalculator.applyInstallmentPayment(loan)
+            if (paymentProgress.paymentAmount <= 0.0) return@launch
 
             // Calcular siguiente fecha de pago (+1 mes)
             val currentPaymentDate = Instant.ofEpochMilli(loan.nextPaymentDate)
@@ -119,8 +116,8 @@ class LoansViewModel @Inject constructor(
             // 1. Actualizar el progreso del crédito
             loanDao.updateLoanPaymentProgress(
                 loanId = loan.id,
-                remainingAmount = newRemainingAmount,
-                paidInstallments = newPaidInstallments,
+                remainingAmount = paymentProgress.remainingAmount,
+                paidInstallments = paymentProgress.paidInstallments,
                 nextPaymentDate = nextPaymentDateMillis
             )
 
@@ -129,7 +126,7 @@ class LoansViewModel @Inject constructor(
             val transaction = TransactionEntity(
                 id = transactionId,
                 accountId = loan.linkedAccountId,
-                amount = loan.monthlyInstallmentAmount,
+                amount = paymentProgress.paymentAmount,
                 type = TransactionType.GASTO,
                 merchant = "Pago Cuota: ${loan.name}",
                 categoryId = null, // Dejar sin categorizar o resuelto
@@ -142,7 +139,7 @@ class LoansViewModel @Inject constructor(
 
             // 3. Si hay una cuenta vinculada, debitar el saldo automáticamente
             loan.linkedAccountId?.let { accountId ->
-                accountDao.adjustBalance(accountId, -loan.monthlyInstallmentAmount)
+                accountDao.adjustBalance(accountId, -paymentProgress.paymentAmount)
             }
         }
     }
