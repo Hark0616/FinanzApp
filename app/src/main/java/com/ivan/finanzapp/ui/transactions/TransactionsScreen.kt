@@ -34,6 +34,10 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+private enum class TransactionFilter {
+    ALL, PENDING_REVIEW, UNCLASSIFIED
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(
@@ -42,10 +46,6 @@ fun TransactionsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
-    
-    enum class TransactionFilter {
-        ALL, PENDING_REVIEW, UNCLASSIFIED
-    }
     var activeFilter by remember { mutableStateOf(TransactionFilter.ALL) }
 
     var selectedTransactionForEdit by remember { mutableStateOf<TransactionWithCategory?>(null) }
@@ -481,4 +481,3 @@ private fun TransactionItemRow(
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 }
-
