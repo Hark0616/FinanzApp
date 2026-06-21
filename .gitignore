@@ -17,6 +17,9 @@ local.properties
 # Log files
 *.log
 
+# Local full-code snapshots used for audits
+finanzapp_codebase.txt
+
 # OS files
 .DS_Store
 Thumbs.db

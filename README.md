@@ -45,6 +45,15 @@ FinanzApp es una aplicación Android nativa diseñada para gestionar finanzas pe
 
 ---
 
+## Principios de Evolución
+
+- **Fiabilidad financiera + UX/UI clara**: cada cambio debe proteger la precisión de saldos, deudas, pagos, privacidad y auditabilidad, y al mismo tiempo explicar al usuario qué es exacto, estimado, pendiente de revisión o riesgoso.
+- **Cambios trazables**: usar ramas pequeñas, commits claros y PRs con pruebas ejecutadas.
+- **Sin mutaciones financieras ambiguas**: si una transacción tiene baja confianza o asignación incierta, debe revisarse antes de alterar saldos o deuda.
+- **Verificación antes de lógica crítica**: antes de tocar cálculos financieros, ejecutar la línea base documentada en [docs/build-verification.md](docs/build-verification.md).
+
+---
+
 ## Guía de Optimización de Batería (S26 Ultra y Redmi 10s)
 
 Para asegurar que Android no detenga el servicio de interceptación de transacciones en segundo plano, realiza las siguientes configuraciones:
