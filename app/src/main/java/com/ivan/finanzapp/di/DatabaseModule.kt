@@ -11,6 +11,7 @@ import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
+import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import dagger.Module
 import dagger.Provides
@@ -68,4 +69,8 @@ object DatabaseModule {
 
     @Provides
     fun provideCustomRuleDao(db: AppDatabase): com.ivan.finanzapp.data.local.dao.CustomRuleDao = db.customRuleDao()
+
+    @Provides
+    fun provideNotificationSyncLedgerDao(db: AppDatabase): NotificationSyncLedgerDao =
+        db.notificationSyncLedgerDao()
 }

@@ -6,6 +6,7 @@ import com.ivan.finanzapp.domain.model.LoanAmortizationType
 import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.data.local.entity.AssetType
+import com.ivan.finanzapp.data.local.entity.NotificationProcessingStatus
 
 /**
  * Convierte enums a String y viceversa para que Room pueda persistirlos.
@@ -48,4 +49,12 @@ class Converters {
     fun toLoanInterestRateType(value: String): LoanInterestRateType =
         LoanInterestRateType.entries.firstOrNull { it.name == value }
             ?: LoanInterestRateType.MONTHLY_EFFECTIVE
+
+    @TypeConverter
+    fun fromNotificationProcessingStatus(value: NotificationProcessingStatus): String = value.name
+
+    @TypeConverter
+    fun toNotificationProcessingStatus(value: String): NotificationProcessingStatus =
+        NotificationProcessingStatus.entries.firstOrNull { it.name == value }
+            ?: NotificationProcessingStatus.FAILED
 }

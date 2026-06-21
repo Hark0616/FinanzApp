@@ -15,6 +15,7 @@ import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
+import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.CategoryEntity
@@ -24,6 +25,7 @@ import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
 import com.ivan.finanzapp.data.local.entity.MerchantCategoryMappingEntity
+import com.ivan.finanzapp.data.local.entity.NotificationSyncLedgerEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.data.local.entity.AssetEntity
 import com.ivan.finanzapp.data.local.dao.AssetDao
@@ -42,9 +44,10 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         LoanPaymentEntity::class,
         DeferredPurchaseEntity::class,
         AssetEntity::class,
-        CustomRuleEntity::class
+        CustomRuleEntity::class,
+        NotificationSyncLedgerEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -60,6 +63,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun deferredPurchaseDao(): DeferredPurchaseDao
     abstract fun assetDao(): AssetDao
     abstract fun customRuleDao(): CustomRuleDao
+    abstract fun notificationSyncLedgerDao(): NotificationSyncLedgerDao
 
 
     companion object {
@@ -159,6 +163,43 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `notification_sync_ledger` (
+                        `id` TEXT NOT NULL,
+                        `packageName` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `text` TEXT NOT NULL,
+                        `postedAtMillis` INTEGER NOT NULL,
+                        `receivedAtMillis` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `statusReason` TEXT,
+                        `transactionId` TEXT,
+                        `accountId` TEXT,
+                        `categoryId` TEXT,
+                        `transactionType` TEXT,
+                        `amount` REAL,
+                        `merchant` TEXT,
+                        `bankSource` TEXT,
+                        `confidence` REAL,
+                        `classifierSource` TEXT,
+                        `errorMessage` TEXT,
+                        `processedAtMillis` INTEGER,
+                        `updatedAtMillis` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_sync_ledger_status` ON `notification_sync_ledger` (`status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_sync_ledger_postedAtMillis` ON `notification_sync_ledger` (`postedAtMillis`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_sync_ledger_receivedAtMillis` ON `notification_sync_ledger` (`receivedAtMillis`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_sync_ledger_transactionId` ON `notification_sync_ledger` (`transactionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_sync_ledger_packageName` ON `notification_sync_ledger` (`packageName`)")
+            }
+        }
+
         /**
          * Crea (o retorna) la instancia única de la base de datos, cifrada
          * con SQLCipher usando [passphrase].
@@ -186,7 +227,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
-                    MIGRATION_11_12
+                    MIGRATION_11_12,
+                    MIGRATION_12_13
                 )
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()

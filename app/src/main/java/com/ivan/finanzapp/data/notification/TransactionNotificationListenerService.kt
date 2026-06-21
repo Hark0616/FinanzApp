@@ -34,15 +34,12 @@ class TransactionNotificationListenerService : NotificationListenerService() {
 
         val packageName = sbn.packageName ?: return
 
-        // Filtro rápido: ignorar notificaciones de apps no bancarias
+        // Filtro de privacidad: el ledger crudo solo debe guardar notificaciones bancarias soportadas.
         if (!parserDispatcher.isSupportedPackage(packageName)) return
 
         val extras = sbn.notification?.extras ?: return
         val title = extras.getString("android.title") ?: ""
         val text = extras.getCharSequence("android.text")?.toString() ?: ""
-
-        // Ignorar notificaciones vacías o solo con título sin cuerpo
-        if (text.isBlank()) return
 
         transactionProcessor.processAsync(
             packageName = packageName,
