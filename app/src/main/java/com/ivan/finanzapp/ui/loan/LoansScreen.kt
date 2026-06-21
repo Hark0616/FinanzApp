@@ -24,6 +24,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.LoanEntity
+import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
 import com.ivan.finanzapp.ui.components.SectionTitle
 import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.theme.TrafficGreen
@@ -72,7 +73,10 @@ fun LoansScreen(
             ) {
                 // Tarjeta de Deuda Total con Gradiente Premium
                 item {
-                    TotalDebtCard(totalDebt = state.totalDebt)
+                    TotalDebtCard(
+                        totalDebt = state.totalDebt,
+                        totalUnpaidInterest = state.totalUnpaidInterest
+                    )
                 }
 
                 item {
@@ -91,6 +95,7 @@ fun LoansScreen(
                     items(state.loans, key = { it.id }) { loan ->
                         LoanCard(
                             loan = loan,
+                            lastPayment = state.latestPaymentsByLoanId[loan.id],
                             onPayClick = { selectedLoanForPayment = loan },
                             onDeleteClick = { viewModel.deleteLoan(loan.id) }
                         )
@@ -144,7 +149,10 @@ fun LoansScreen(
 }
 
 @Composable
-private fun TotalDebtCard(totalDebt: Double) {
+private fun TotalDebtCard(
+    totalDebt: Double,
+    totalUnpaidInterest: Double
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -158,7 +166,7 @@ private fun TotalDebtCard(totalDebt: Double) {
     ) {
         Column(Modifier.padding(24.dp)) {
             Text(
-                "Deuda total en créditos",
+                "Capital pendiente en créditos",
                 color = Color.White.copy(alpha = 0.85f),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium
@@ -171,6 +179,15 @@ private fun TotalDebtCard(totalDebt: Double) {
                 fontSize = 36.sp,
                 lineHeight = 42.sp
             )
+            if (totalUnpaidInterest > 0.0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Interés no cubierto registrado: ${formatCOP(totalUnpaidInterest)}",
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }
@@ -178,6 +195,7 @@ private fun TotalDebtCard(totalDebt: Double) {
 @Composable
 private fun LoanCard(
     loan: LoanEntity,
+    lastPayment: LoanPaymentEntity?,
     onPayClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
@@ -206,6 +224,11 @@ private fun LoanCard(
     val debtProgress = if (loan.totalAmount > 0) {
         (loan.totalAmount - loan.remainingAmount).toFloat() / loan.totalAmount.toFloat()
     } else 0f
+    val installmentsText = if (loan.paidInstallments > loan.totalInstallments) {
+        "Pagos registrados: ${loan.paidInstallments} (plan original: ${loan.totalInstallments})"
+    } else {
+        "Cuotas pagadas: ${loan.paidInstallments} de ${loan.totalInstallments}"
+    }
 
     Card(
         modifier = Modifier
@@ -245,7 +268,7 @@ private fun LoanCard(
             // Progreso de las cuotas
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    "Cuotas pagadas: ${loan.paidInstallments} de ${loan.totalInstallments}",
+                    installmentsText,
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
@@ -330,6 +353,11 @@ private fun LoanCard(
 
             Spacer(Modifier.height(16.dp))
 
+            lastPayment?.let { payment ->
+                LastLoanPaymentSummary(payment = payment)
+                Spacer(Modifier.height(16.dp))
+            }
+
             // Próximo vencimiento
             Row(
                 Modifier.fillMaxWidth(),
@@ -367,6 +395,50 @@ private fun LoanCard(
     }
 }
 
+@Composable
+private fun LastLoanPaymentSummary(payment: LoanPaymentEntity) {
+    val paymentDate = Instant.ofEpochMilli(payment.paymentDate)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+        .format(DateTimeFormatter.ofPattern("dd MMM"))
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Último pago", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+            Text(paymentDate, style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Aplicado: ${formatCOP(payment.actualPaymentAmount)}",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            "Capital: ${formatCOP(payment.principalAmount)} · Interés: ${formatCOP(payment.interestPaidAmount)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.Gray
+        )
+        if (payment.unpaidInterestAmount > 0.0) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Interés no cubierto: ${formatCOP(payment.unpaidInterestAmount)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = TrafficRed,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddLoanDialog(
@@ -391,6 +463,32 @@ private fun AddLoanDialog(
 
     var expanded by remember { mutableStateOf(false) }
     var selectedAccount by remember { mutableStateOf<AccountEntity?>(null) }
+
+    val parsedTotalAmount = totalAmount.toDoubleOrNull()
+    val parsedInterestRate = interestRate.toDoubleOrNull()
+    val parsedInstallments = totalInstallments.toIntOrNull()
+    val parsedMonthlyInstallment = monthlyInstallment.toDoubleOrNull()
+    val parsedPaymentDay = paymentDay.toIntOrNull()
+    val firstMonthInterest = if (parsedTotalAmount != null && parsedInterestRate != null) {
+        parsedTotalAmount * parsedInterestRate.coerceAtLeast(0.0) / 100.0
+    } else {
+        null
+    }
+    val installmentWarning = if (
+        parsedMonthlyInstallment != null &&
+        firstMonthInterest != null &&
+        firstMonthInterest > 0.0 &&
+        parsedMonthlyInstallment <= firstMonthInterest
+    ) {
+        "La cuota no cubre el interés estimado del primer mes (${formatCOP(firstMonthInterest)}). El saldo de capital no bajará."
+    } else {
+        null
+    }
+    val canSave = name.isNotBlank() &&
+            parsedTotalAmount != null && parsedTotalAmount > 0.0 &&
+            parsedInstallments != null && parsedInstallments > 0 &&
+            parsedMonthlyInstallment != null && parsedMonthlyInstallment > 0.0 &&
+            parsedPaymentDay != null && parsedPaymentDay in 1..31
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -454,6 +552,17 @@ private fun AddLoanDialog(
                     )
                 }
 
+                installmentWarning?.let { warning ->
+                    item {
+                        Text(
+                            warning,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TrafficRed,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
                 item {
                     OutlinedTextField(
                         value = paymentDay,
@@ -512,19 +621,17 @@ private fun AddLoanDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val total = totalAmount.toDoubleOrNull() ?: 0.0
-                    val interest = interestRate.toDoubleOrNull() ?: 0.0
-                    val installments = totalInstallments.toIntOrNull() ?: 1
-                    val cuota = monthlyInstallment.toDoubleOrNull() ?: 0.0
-                    val day = paymentDay.toIntOrNull()?.coerceIn(1, 31) ?: 1
+                    val total = parsedTotalAmount ?: return@Button
+                    val interest = parsedInterestRate ?: 0.0
+                    val installments = parsedInstallments ?: return@Button
+                    val cuota = parsedMonthlyInstallment ?: return@Button
+                    val day = parsedPaymentDay ?: return@Button
 
-                    if (name.isNotBlank() && total > 0.0 && cuota > 0.0) {
+                    if (canSave) {
                         onConfirm(name, total, interest, installments, cuota, day, selectedAccount?.id)
                     }
                 },
-                enabled = name.isNotBlank() &&
-                        totalAmount.toDoubleOrNull() != null &&
-                        monthlyInstallment.toDoubleOrNull() != null
+                enabled = canSave
             ) {
                 Text("Guardar")
             }
