@@ -8,6 +8,8 @@
         android:shortcutLongLabel="@string/shortcut_add_long_label">
         <intent
             android:action="android.intent.action.VIEW"
+            android:targetPackage="com.ivan.finanzapp"
+            android:targetClass="com.ivan.finanzapp.MainActivity"
             android:data="finanzapp://transactions?action=add_expense" />
     </shortcut>
     <shortcut
@@ -18,6 +20,8 @@
         android:shortcutLongLabel="@string/shortcut_unclassified_long_label">
         <intent
             android:action="android.intent.action.VIEW"
+            android:targetPackage="com.ivan.finanzapp"
+            android:targetClass="com.ivan.finanzapp.MainActivity"
             android:data="finanzapp://transactions?action=view_unclassified" />
     </shortcut>
 </shortcuts>
