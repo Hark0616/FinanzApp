@@ -44,7 +44,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         AssetEntity::class,
         CustomRuleEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -137,6 +137,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE loans ADD COLUMN interestRateInputValue REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE loans ADD COLUMN interestRateType TEXT NOT NULL DEFAULT 'MONTHLY_EFFECTIVE'")
+                db.execSQL("ALTER TABLE loans ADD COLUMN amortizationType TEXT NOT NULL DEFAULT 'FIXED_INSTALLMENT'")
+                db.execSQL("UPDATE loans SET interestRateInputValue = monthlyInterestRate")
+            }
+        }
+
         /**
          * Crea (o retorna) la instancia única de la base de datos, cifrada
          * con SQLCipher usando [passphrase].
@@ -157,7 +166,8 @@ abstract class AppDatabase : RoomDatabase() {
             val factory: SupportSQLiteOpenHelper.Factory = SupportOpenHelperFactory(passphrase)
             return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
         }
     }

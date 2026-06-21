@@ -2,6 +2,8 @@ package com.ivan.finanzapp.data.local.converters
 
 import androidx.room.TypeConverter
 import com.ivan.finanzapp.domain.model.AccountType
+import com.ivan.finanzapp.domain.model.LoanAmortizationType
+import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.data.local.entity.AssetType
 
@@ -30,4 +32,20 @@ class Converters {
     @TypeConverter
     fun toAssetType(value: String): AssetType =
         AssetType.entries.firstOrNull { it.name == value } ?: AssetType.OTRO
+
+    @TypeConverter
+    fun fromLoanAmortizationType(value: LoanAmortizationType): String = value.name
+
+    @TypeConverter
+    fun toLoanAmortizationType(value: String): LoanAmortizationType =
+        LoanAmortizationType.entries.firstOrNull { it.name == value }
+            ?: LoanAmortizationType.FIXED_INSTALLMENT
+
+    @TypeConverter
+    fun fromLoanInterestRateType(value: LoanInterestRateType): String = value.name
+
+    @TypeConverter
+    fun toLoanInterestRateType(value: String): LoanInterestRateType =
+        LoanInterestRateType.entries.firstOrNull { it.name == value }
+            ?: LoanInterestRateType.MONTHLY_EFFECTIVE
 }

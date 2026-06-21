@@ -1,6 +1,8 @@
 package com.ivan.finanzapp.domain.calculator
 
 import com.ivan.finanzapp.data.local.entity.LoanEntity
+import com.ivan.finanzapp.domain.model.LoanInterestRateType
+import kotlin.math.pow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -9,6 +11,18 @@ import javax.inject.Singleton
  */
 @Singleton
 class LoanCalculator @Inject constructor() {
+
+    fun normalizeMonthlyInterestRate(
+        interestRateInputValue: Double,
+        interestRateType: LoanInterestRateType
+    ): Double {
+        val rate = interestRateInputValue.coerceAtLeast(0.0)
+        return when (interestRateType) {
+            LoanInterestRateType.MONTHLY_EFFECTIVE -> rate
+            LoanInterestRateType.EFFECTIVE_ANNUAL -> ((1.0 + rate / 100.0).pow(1.0 / 12.0) - 1.0) * 100.0
+            LoanInterestRateType.NOMINAL_ANNUAL_MONTHLY -> rate / 12.0
+        }
+    }
 
     fun monthlyInterestAmount(remainingAmount: Double, monthlyInterestRate: Double): Double {
         if (remainingAmount <= 0.0) return 0.0

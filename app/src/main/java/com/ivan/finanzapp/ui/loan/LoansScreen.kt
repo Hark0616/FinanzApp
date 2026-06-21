@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
+import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import com.ivan.finanzapp.ui.components.SectionTitle
 import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.theme.TrafficGreen
@@ -34,6 +35,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.pow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,11 +113,12 @@ fun LoansScreen(
             AddLoanDialog(
                 accounts = state.accounts,
                 onDismiss = { viewModel.toggleAddDialog(false) },
-                onConfirm = { name, total, interest, installments, cuota, insurance, fee, day, accountId ->
+                onConfirm = { name, total, interest, interestType, installments, cuota, insurance, fee, day, accountId ->
                     viewModel.addLoan(
                         name = name,
                         totalAmount = total,
                         interestRate = interest,
+                        interestRateType = interestType,
                         totalInstallments = installments,
                         monthlyInstallment = cuota,
                         monthlyInsurance = insurance,
@@ -357,10 +361,17 @@ private fun LoanCard(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Tasa Interés", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
                     Text(
-                        "${loan.monthlyInterestRate}% mes",
+                        "${formatRatePercent(loan.interestRateInputValue)} ${loan.interestRateType.shortLabel}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
+                    if (loan.interestRateType != LoanInterestRateType.MONTHLY_EFFECTIVE) {
+                        Text(
+                            "Eq. ${formatRatePercent(loan.monthlyInterestRate)}% mes",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.Gray
+                        )
+                    }
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("Día de Pago", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
@@ -371,6 +382,13 @@ private fun LoanCard(
                     )
                 }
             }
+
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Método: ${loan.amortizationType.displayName}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
 
             val monthlyFixedCharges = loan.monthlyInsuranceAmount + loan.monthlyFeeAmount
             if (monthlyFixedCharges > 0.0) {
@@ -498,6 +516,7 @@ private fun AddLoanDialog(
         name: String,
         totalAmount: Double,
         interestRate: Double,
+        interestRateType: LoanInterestRateType,
         totalInstallments: Int,
         monthlyInstallment: Double,
         monthlyInsurance: Double,
@@ -509,6 +528,8 @@ private fun AddLoanDialog(
     var name by remember { mutableStateOf("") }
     var totalAmount by remember { mutableStateOf("") }
     var interestRate by remember { mutableStateOf("") }
+    var interestRateType by remember { mutableStateOf(LoanInterestRateType.MONTHLY_EFFECTIVE) }
+    var interestRateTypeExpanded by remember { mutableStateOf(false) }
     var totalInstallments by remember { mutableStateOf("") }
     var monthlyInstallment by remember { mutableStateOf("") }
     var monthlyInsurance by remember { mutableStateOf("") }
@@ -528,7 +549,8 @@ private fun AddLoanDialog(
     val normalizedMonthlyFee = parsedMonthlyFee ?: 0.0
     val parsedPaymentDay = paymentDay.toIntOrNull()
     val firstMonthInterest = if (parsedTotalAmount != null && parsedInterestRate != null) {
-        parsedTotalAmount * parsedInterestRate.coerceAtLeast(0.0) / 100.0
+        val monthlyRate = normalizeMonthlyInterestRateForPreview(parsedInterestRate, interestRateType)
+        parsedTotalAmount * monthlyRate / 100.0
     } else {
         null
     }
@@ -581,10 +603,45 @@ private fun AddLoanDialog(
                 }
 
                 item {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = interestRateType.displayName,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Tipo de tasa") },
+                            trailingIcon = {
+                                IconButton(onClick = { interestRateTypeExpanded = true }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { interestRateTypeExpanded = true }
+                        )
+
+                        DropdownMenu(
+                            expanded = interestRateTypeExpanded,
+                            onDismissRequest = { interestRateTypeExpanded = false },
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            LoanInterestRateType.entries.forEach { type ->
+                                DropdownMenuItem(
+                                    text = { Text("${type.displayName} (${type.shortLabel})") },
+                                    onClick = {
+                                        interestRateType = type
+                                        interestRateTypeExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
                     OutlinedTextField(
                         value = interestRate,
                         onValueChange = { interestRate = it },
-                        label = { Text("Tasa de Interés Mensual (%)") },
+                        label = { Text("Tasa de interés (${interestRateType.shortLabel})") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -715,6 +772,7 @@ private fun AddLoanDialog(
                             name,
                             total,
                             interest,
+                            interestRateType,
                             installments,
                             cuota,
                             normalizedMonthlyInsurance,
@@ -735,6 +793,24 @@ private fun AddLoanDialog(
             }
         }
     )
+}
+
+private fun normalizeMonthlyInterestRateForPreview(
+    interestRateInputValue: Double,
+    interestRateType: LoanInterestRateType
+): Double {
+    val rate = interestRateInputValue.coerceAtLeast(0.0)
+    return when (interestRateType) {
+        LoanInterestRateType.MONTHLY_EFFECTIVE -> rate
+        LoanInterestRateType.EFFECTIVE_ANNUAL -> ((1.0 + rate / 100.0).pow(1.0 / 12.0) - 1.0) * 100.0
+        LoanInterestRateType.NOMINAL_ANNUAL_MONTHLY -> rate / 12.0
+    }
+}
+
+private fun formatRatePercent(value: Double): String {
+    return String.format(Locale.US, "%.4f", value)
+        .trimEnd('0')
+        .trimEnd('.')
 }
 
 @Composable

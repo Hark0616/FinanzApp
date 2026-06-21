@@ -32,3 +32,16 @@ enum class BankSource {
     SMS,
     DESCONOCIDO
 }
+
+enum class LoanAmortizationType(val displayName: String) {
+    FIXED_INSTALLMENT("Cuota fija")
+}
+
+enum class LoanInterestRateType(
+    val displayName: String,
+    val shortLabel: String
+) {
+    MONTHLY_EFFECTIVE("Mensual efectiva", "% M.V."),
+    EFFECTIVE_ANNUAL("Efectiva anual", "% E.A."),
+    NOMINAL_ANNUAL_MONTHLY("Nominal anual mes vencido", "% N.A. M.V.")
+}
