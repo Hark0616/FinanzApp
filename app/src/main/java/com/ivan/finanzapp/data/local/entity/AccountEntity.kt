@@ -22,5 +22,6 @@ data class AccountEntity(
      * disponible en sus notificaciones).
      */
     val isManualBalance: Boolean = true,
+    val lastFourDigits: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )

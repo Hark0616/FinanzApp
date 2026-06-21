@@ -178,7 +178,8 @@ class TransactionProcessor @Inject constructor(
         val categoryId = categoryResolver.resolve(transaction.merchant, aiCategoryName)
 
         // Paso 4: resolver cuenta
-        val accountId = accountResolver.resolveAccountId(transaction.source, transaction.type)
+        val fullMessage = "$title $text"
+        val accountId = accountResolver.resolveAccountId(transaction.source, transaction.type, fullMessage)
 
         // Paso 5: generar id determinístico para deduplicación
         val id = TransactionIdGenerator.generate(

@@ -143,8 +143,8 @@ fun SettingsScreen(
         if (state.isAddAccountDialogVisible) {
             AddAccountDialog(
                 onDismiss = { viewModel.toggleAddAccountDialog(false) },
-                onConfirm = { name, type, balance, limit, cutoff, due, interest ->
-                    viewModel.addAccount(name, type, balance, limit, cutoff, due, interest)
+                onConfirm = { name, type, balance, limit, cutoff, due, interest, digits ->
+                    viewModel.addAccount(name, type, balance, limit, cutoff, due, interest, digits)
                 }
             )
         }
@@ -824,12 +824,14 @@ private fun AddAccountDialog(
         creditLimit: Double,
         cutoffDay: Int,
         paymentDueDay: Int,
-        interestRateEA: Double?
+        interestRateEA: Double?,
+        lastFourDigits: String?
     ) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(AccountType.AHORROS) }
     var initialBalance by remember { mutableStateOf("") }
+    var lastFourDigits by remember { mutableStateOf("") }
 
     // Campos de Tarjeta de Crédito
     var creditLimit by remember { mutableStateOf("") }
@@ -855,6 +857,22 @@ private fun AddAccountDialog(
                         placeholder = { Text("Ej: Ahorros, Efectivo, Bolsa") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = lastFourDigits,
+                        onValueChange = { input ->
+                            if (input.length <= 4 && input.all { it.isDigit() }) {
+                                lastFourDigits = input
+                            }
+                        },
+                        label = { Text("Últimos 4 dígitos (opcional)") },
+                        placeholder = { Text("Ej: 5039") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
 
@@ -1004,7 +1022,8 @@ private fun AddAccountDialog(
                     val ea = interestRateEA.toDoubleOrNull()
 
                     if (name.isNotBlank()) {
-                        onConfirm(name, type, balance, limit, cutoff, due, ea)
+                        val digits = lastFourDigits.trim().takeIf { it.isNotBlank() }
+                        onConfirm(name, type, balance, limit, cutoff, due, ea, digits)
                     }
                 },
                 enabled = name.isNotBlank() && isBalanceValid && isLimitValid

@@ -34,7 +34,11 @@ class AccountResolver @Inject constructor(
      * transacción se guardará con `accountId = null` y aparecerá en una
      * sección de "sin asignar" hasta que el usuario configure sus cuentas).
      */
-    suspend fun resolveAccountId(source: BankSource, type: TransactionType): String? {
+    suspend fun resolveAccountId(
+        source: BankSource,
+        type: TransactionType,
+        rawNotificationText: String? = null
+    ): String? {
         val isCreditCardRelated = type == TransactionType.GASTO_TC || type == TransactionType.PAGO_TC
 
         val accountType = when {
@@ -50,6 +54,17 @@ class AccountResolver @Inject constructor(
             accountDao.getAccountsByType(accountType)
         } else {
             emptyList()
+        }
+
+        if (candidates.isEmpty()) return null
+
+        // Buscar correspondencia exacta por últimos 4 dígitos
+        if (!rawNotificationText.isNullOrBlank()) {
+            val matched = candidates.firstOrNull { candidate ->
+                val digits = candidate.lastFourDigits
+                !digits.isNullOrBlank() && rawNotificationText.contains(digits)
+            }
+            if (matched != null) return matched.id
         }
 
         return candidates.firstOrNull()?.id

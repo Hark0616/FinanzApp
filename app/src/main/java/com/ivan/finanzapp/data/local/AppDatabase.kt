@@ -44,7 +44,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         AssetEntity::class,
         CustomRuleEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -118,6 +118,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE accounts ADD COLUMN lastFourDigits TEXT DEFAULT NULL")
+            }
+        }
+
         /**
          * Crea (o retorna) la instancia única de la base de datos, cifrada
          * con SQLCipher usando [passphrase].
@@ -138,7 +144,7 @@ abstract class AppDatabase : RoomDatabase() {
             val factory: SupportSQLiteOpenHelper.Factory = SupportOpenHelperFactory(passphrase)
             return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
         }
     }

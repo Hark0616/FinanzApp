@@ -132,7 +132,8 @@ class SettingsViewModel @Inject constructor(
         creditLimit: Double = 0.0,
         cutoffDay: Int = 15,
         paymentDueDay: Int = 30,
-        interestRateEA: Double? = null
+        interestRateEA: Double? = null,
+        lastFourDigits: String? = null
     ) {
         viewModelScope.launch {
             val accountId = UUID.randomUUID().toString()
@@ -141,7 +142,8 @@ class SettingsViewModel @Inject constructor(
                 name = name,
                 type = type,
                 currentBalance = if (type == AccountType.TARJETA_CREDITO) 0.0 else initialBalance,
-                isManualBalance = true
+                isManualBalance = true,
+                lastFourDigits = lastFourDigits
             )
             accountDao.upsert(account)
 
