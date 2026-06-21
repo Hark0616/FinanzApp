@@ -29,30 +29,50 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _isAddAccountDialogVisible = MutableStateFlow(false)
+    private val _isProcessingDialogVisible = MutableStateFlow(false)
     private val _isSavedSuccess = MutableStateFlow(false)
     private val _isLocalAiPrefChanged = MutableStateFlow(false)
+    private val _processingModeChanged = MutableStateFlow(false)
 
     val uiState: StateFlow<SettingsUiState> = combine(
         accountDao.observeAccounts(),
         _isAddAccountDialogVisible,
+        _isProcessingDialogVisible,
         _isSavedSuccess,
-        _isLocalAiPrefChanged
-    ) { accounts, isAddDialogVisible, isSavedSuccess, _ ->
+        _isLocalAiPrefChanged,
+        _processingModeChanged
+    ) { flows ->
+        @Suppress("UNCHECKED_CAST")
+        val accounts = flows[0] as List<AccountEntity>
+        val isAddDialogVisible = flows[1] as Boolean
+        val isProcDialogVisible = flows[2] as Boolean
+        val isSavedSuccess = flows[3] as Boolean
         val apiKey = securePrefs.getOpenRouterApiKey() ?: ""
         SettingsUiState(
             isLoading = false,
             apiKey = apiKey,
             accounts = accounts,
             isAddAccountDialogVisible = isAddDialogVisible,
+            isProcessingDialogVisible = isProcDialogVisible,
             isSavedSuccess = isSavedSuccess,
             isLocalAiSupported = localAiClassifier.isLocalAiSupported(),
-            isLocalAiEnabled = securePrefs.isLocalAiEnabled()
+            isLocalAiEnabled = securePrefs.isLocalAiEnabled(),
+            processingMode = securePrefs.getNotificationProcessingMode()
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = SettingsUiState()
     )
+
+    fun toggleProcessingDialog(visible: Boolean) {
+        _isProcessingDialogVisible.update { visible }
+    }
+
+    fun setNotificationProcessingMode(mode: String) {
+        securePrefs.setNotificationProcessingMode(mode)
+        _processingModeChanged.update { !it }
+    }
 
     fun setLocalAiEnabled(enabled: Boolean) {
         securePrefs.setLocalAiEnabled(enabled)

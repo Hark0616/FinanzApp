@@ -63,9 +63,22 @@ class SecurePrefs @Inject constructor(
         prefs.edit().putBoolean(KEY_LOCAL_AI_ENABLED, enabled).apply()
     }
 
+    fun getNotificationProcessingMode(): String {
+        return prefs.getString(KEY_PROCESSING_MODE, MODE_PARSER) ?: MODE_PARSER
+    }
+
+    fun setNotificationProcessingMode(mode: String) {
+        prefs.edit().putString(KEY_PROCESSING_MODE, mode).apply()
+    }
+
     companion object {
         private const val KEY_DB_PASSPHRASE = "db_passphrase"
         private const val KEY_OPENROUTER_API_KEY = "openrouter_api_key"
         private const val KEY_LOCAL_AI_ENABLED = "local_ai_enabled"
+        private const val KEY_PROCESSING_MODE = "processing_mode"
+
+        const val MODE_PARSER = "PARSER"
+        const val MODE_LOCAL_AI = "LOCAL_AI"
+        const val MODE_CLOUD_AI = "CLOUD_AI"
     }
 }

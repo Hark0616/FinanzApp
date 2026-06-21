@@ -840,7 +840,7 @@ private fun EmptyCardsCard() {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Ve a Ajustes → Agregar Cuenta Bancaria y crea una cuenta seleccionando el tipo 'TARJETA_CREDITO' " +
+            "Ve a Ajustes → Agregar Cuenta y crea una cuenta seleccionando el tipo 'Tarjeta de Crédito' " +
                     "para que empiece a mostrarse aquí con su cupo, corte y control de vencimiento.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),

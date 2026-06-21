@@ -1,5 +1,6 @@
 package com.ivan.finanzapp.data.notification
 
+import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
@@ -40,6 +41,7 @@ class TransactionProcessor @Inject constructor(
     private val parserDispatcher: ParserDispatcher,
     private val aiClassifier: TransactionAiClassifier,
     private val localAiClassifier: LocalAiClassifier,
+    private val securePrefs: SecurePrefs,
     private val categoryResolver: CategoryResolver,
     private val accountResolver: AccountResolver,
     private val transactionDao: TransactionDao,
@@ -84,14 +86,17 @@ class TransactionProcessor @Inject constructor(
 
         // Paso 2: fallback de IA si las reglas no matchearon
         if (parsed == null) {
-            // Intentar primero con IA local en dispositivo (ej. Gemini Nano en S26 Ultra)
-            val localResult = localAiClassifier.classifyLocally(packageName, title, text)
-            if (localResult != null) {
-                parsed = localResult.first
-                aiCategoryName = localResult.second
-                usedAi = true
-            } else {
-                // Fallback a IA en la nube (OpenRouter) si la local no está habilitada o falla
+            val mode = securePrefs.getNotificationProcessingMode()
+            if (mode == SecurePrefs.MODE_LOCAL_AI) {
+                // Intentar con IA local en dispositivo (ej. Gemini Nano en S26 Ultra)
+                val localResult = localAiClassifier.classifyLocally(packageName, title, text)
+                if (localResult != null) {
+                    parsed = localResult.first
+                    aiCategoryName = localResult.second
+                    usedAi = true
+                }
+            } else if (mode == SecurePrefs.MODE_CLOUD_AI) {
+                // Fallback a IA en la nube (OpenRouter)
                 val aiResult = aiClassifier.classifyWithCategory(packageName, title, text)
                 if (aiResult != null) {
                     parsed = aiResult.first

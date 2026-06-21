@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.ui.components.SectionTitle
@@ -35,14 +36,6 @@ fun SettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    var apiKeyInput by remember { mutableStateOf("") }
-    var showApiKey by remember { mutableStateOf(false) }
-
-    // Rellenar la API key cuando cargue
-    LaunchedEffect(state.apiKey) {
-        apiKeyInput = state.apiKey
-    }
-
     Scaffold { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -52,90 +45,58 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Sección: API Key de OpenRouter
+            // Sección: Procesamiento de Notificaciones
             item {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.toggleProcessingDialog(true) },
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
                 ) {
-                    Column(Modifier.padding(16.dp)) {
-                        SectionTitle("AI Fallback (OpenRouter API Key)")
-                        Text(
-                            "Ingresa tu clave API de OpenRouter para activar la extracción automática " +
-                                    "con inteligencia artificial (Gemini Flash) cuando los mensajes o notificaciones no coincidan " +
-                                    "con las reglas locales. Se almacena localmente de forma cifrada.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = apiKeyInput,
-                            onValueChange = { apiKeyInput = it },
-                            label = { Text("OpenRouter API Key") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                IconButton(onClick = { showApiKey = !showApiKey }) {
-                                    Icon(
-                                        imageVector = if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = "Mostrar/Ocultar"
-                                    )
-                                }
-                            }
-                        )
-
-                        Spacer(Modifier.height(12.dp))
-
-                        Button(
-                            onClick = { viewModel.saveApiKey(apiKeyInput) },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text("Guardar API Key")
-                        }
-
-                        AnimatedVisibility(visible = state.isSavedSuccess) {
-                            Text(
-                                "¡API Key guardada correctamente!",
-                                color = Color(0xFF2E7D32),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(top = 8.dp)
-                            )
-                        }
-
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Memory,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Column {
                                 Text(
-                                    "Procesamiento local con IA",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
+                                    text = "Procesamiento de Notificaciones",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
-                                val description = if (state.isLocalAiSupported) {
-                                    "Compatible con tu dispositivo. Usa Gemini Nano local para clasificar transacciones sin enviar datos a la nube."
-                                } else {
-                                    "IA en dispositivo no compatible. Requiere procesador con NPU premium (ej. Galaxy S26 Ultra). Se usará IA en la nube."
+                                val modeDesc = when (state.processingMode) {
+                                    SecurePrefs.MODE_PARSER -> "Reglas locales de la App"
+                                    SecurePrefs.MODE_LOCAL_AI -> "Inteligencia Artificial local (Gemini Nano)"
+                                    SecurePrefs.MODE_CLOUD_AI -> "Inteligencia Artificial en la nube (Gemini Flash)"
+                                    else -> "Desconocido"
                                 }
                                 Text(
-                                    description,
+                                    text = modeDesc,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Switch(
-                                checked = state.isLocalAiEnabled,
-                                onCheckedChange = { viewModel.setLocalAiEnabled(it) },
-                                enabled = state.isLocalAiSupported
-                            )
                         }
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Configurar",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -147,7 +108,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SectionTitle("Mis Cuentas Bancarias")
+                    SectionTitle("Cuentas y Activos Financieros")
                     Button(
                         onClick = { viewModel.toggleAddAccountDialog(true) },
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
@@ -162,7 +123,7 @@ fun SettingsScreen(
             if (state.accounts.isEmpty()) {
                 item {
                     Text(
-                        "No has agregado cuentas bancarias todavía. Las transacciones de tus notificaciones " +
+                        "No has configurado cuentas ni instrumentos financieros todavía. Las transacciones de tus notificaciones " +
                                 "aparecerán sin asignar hasta que las asocies.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
@@ -193,7 +154,237 @@ fun SettingsScreen(
                 }
             )
         }
+
+        // Diálogo para Procesamiento de Notificaciones
+        if (state.isProcessingDialogVisible) {
+            NotificationProcessingDialog(
+                state = state,
+                onDismiss = { viewModel.toggleProcessingDialog(false) },
+                onModeSelected = { viewModel.setNotificationProcessingMode(it) },
+                onSaveApiKey = { viewModel.saveApiKey(it) },
+                onLocalAiToggle = { viewModel.setLocalAiEnabled(it) },
+                apiKeyInputInitial = state.apiKey
+            )
+        }
     }
+}
+
+@Composable
+private fun NotificationProcessingDialog(
+    state: SettingsUiState,
+    onDismiss: () -> Unit,
+    onModeSelected: (String) -> Unit,
+    onSaveApiKey: (String) -> Unit,
+    onLocalAiToggle: (Boolean) -> Unit,
+    apiKeyInputInitial: String
+) {
+    var apiKeyInput by remember(apiKeyInputInitial) { mutableStateOf(apiKeyInputInitial) }
+    var showApiKey by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Procesamiento de Notificaciones") },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Listo")
+            }
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Elige cómo deseas procesar las notificaciones de tus bancos para registrar movimientos:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Opción 1: Reglas Automáticas Locales
+                val isParser = state.processingMode == SecurePrefs.MODE_PARSER
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onModeSelected(SecurePrefs.MODE_PARSER) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isParser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                    ),
+                    border = CardDefaults.outlinedCardBorder().takeIf { !isParser }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = isParser,
+                            onClick = { onModeSelected(SecurePrefs.MODE_PARSER) }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Reglas Locales de la App",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Procesamiento local ultrarrápido y 100% privado basado en algoritmos nativos.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Opción 2: IA Local (Gemini Nano)
+                val isLocalAi = state.processingMode == SecurePrefs.MODE_LOCAL_AI
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = state.isLocalAiSupported) {
+                            onModeSelected(SecurePrefs.MODE_LOCAL_AI)
+                            onLocalAiToggle(true)
+                        },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isLocalAi) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                    ),
+                    border = CardDefaults.outlinedCardBorder().takeIf { !isLocalAi }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = isLocalAi,
+                            enabled = state.isLocalAiSupported,
+                            onClick = {
+                                onModeSelected(SecurePrefs.MODE_LOCAL_AI)
+                                onLocalAiToggle(true)
+                            }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "IA Local en Dispositivo",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (state.isLocalAiSupported) Color.Unspecified else Color.Gray
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                if (!state.isLocalAiSupported) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.errorContainer,
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "No compatible",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            val descText = if (state.isLocalAiSupported) {
+                                "Usa la NPU de tu dispositivo (Gemini Nano) para interpretar notificaciones complejas sin internet."
+                            } else {
+                                "Requiere un dispositivo premium con NPU integrada (ej. Galaxy S26 Ultra / Pixel 8+)."
+                            }
+                            Text(
+                                text = descText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Opción 3: IA en la Nube (Gemini Flash)
+                val isCloudAi = state.processingMode == SecurePrefs.MODE_CLOUD_AI
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onModeSelected(SecurePrefs.MODE_CLOUD_AI) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isCloudAi) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                    ),
+                    border = CardDefaults.outlinedCardBorder().takeIf { !isCloudAi }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = isCloudAi,
+                            onClick = { onModeSelected(SecurePrefs.MODE_CLOUD_AI) }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "IA en la Nube (Gemini Flash)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Usa modelos en la nube mediante OpenRouter para máxima precisión de extracción.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Sección adicional: Si se selecciona IA en la Nube, pedir la API Key de OpenRouter
+                AnimatedVisibility(visible = isCloudAi) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "Clave API de OpenRouter:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            OutlinedTextField(
+                                value = apiKeyInput,
+                                onValueChange = { apiKeyInput = it },
+                                label = { Text("OpenRouter API Key") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { showApiKey = !showApiKey }) {
+                                        Icon(
+                                            imageVector = if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = "Mostrar/Ocultar"
+                                        )
+                                    }
+                                }
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Button(
+                                onClick = { onSaveApiKey(apiKeyInput) },
+                                modifier = Modifier.align(Alignment.End)
+                            ) {
+                                Text("Guardar API Key")
+                            }
+                            AnimatedVisibility(visible = state.isSavedSuccess) {
+                                Text(
+                                    "¡API Key guardada correctamente!",
+                                    color = Color(0xFF2E7D32),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -219,13 +410,15 @@ private fun AccountItemRow(
                     AccountType.TARJETA_CREDITO -> Icons.Default.CreditCard
                     AccountType.NEQUI -> Icons.Default.Smartphone
                     AccountType.DAVIPLATA -> Icons.Default.AccountBalanceWallet
+                    AccountType.EFECTIVO -> Icons.Default.Payments
+                    AccountType.INVERSION -> Icons.Default.ShowChart
                     else -> Icons.Default.AccountBalance
                 }
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(account.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                    Text(account.type.name, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Text(account.type.displayName, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -359,7 +552,7 @@ private fun AddAccountDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Agregar Cuenta Bancaria") },
+        title = { Text("Agregar Cuenta") },
         text = {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -369,7 +562,8 @@ private fun AddAccountDialog(
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("Nombre de la Cuenta") },
+                        label = { Text("Nombre") },
+                        placeholder = { Text("Ej: Ahorros, Efectivo, Bolsa") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -379,7 +573,7 @@ private fun AddAccountDialog(
                     Text("Tipo de Cuenta", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
-                            value = type.name,
+                            value = type.displayName,
                             onValueChange = {},
                             readOnly = true,
                             trailingIcon = {
@@ -397,14 +591,44 @@ private fun AddAccountDialog(
                             onDismissRequest = { typeExpanded = false },
                             modifier = Modifier.fillMaxWidth(0.9f)
                         ) {
-                            AccountType.entries.forEach { t ->
-                                DropdownMenuItem(
-                                    text = { Text(t.name) },
-                                    onClick = {
-                                        type = t
-                                        typeExpanded = false
-                                    }
+                            val groupedTypes = AccountType.entries.groupBy { it.category }
+                            groupedTypes.forEach { (category, types) ->
+                                Text(
+                                    text = category.uppercase(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                                 )
+                                types.forEach { t ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                val tIcon = when (t) {
+                                                    AccountType.AHORROS -> Icons.Default.AccountBalance
+                                                    AccountType.TARJETA_CREDITO -> Icons.Default.CreditCard
+                                                    AccountType.NEQUI -> Icons.Default.Smartphone
+                                                    AccountType.DAVIPLATA -> Icons.Default.AccountBalanceWallet
+                                                    AccountType.EFECTIVO -> Icons.Default.Payments
+                                                    AccountType.INVERSION -> Icons.Default.ShowChart
+                                                    else -> Icons.Default.Wallet
+                                                }
+                                                Icon(
+                                                    tIcon,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp),
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(t.displayName)
+                                            }
+                                        },
+                                        onClick = {
+                                            type = t
+                                            typeExpanded = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

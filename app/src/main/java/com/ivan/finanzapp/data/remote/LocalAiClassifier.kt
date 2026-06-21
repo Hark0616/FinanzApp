@@ -31,7 +31,12 @@ class LocalAiClassifier @Inject constructor(
                 model.contains("Pixel 8", ignoreCase = true) ||
                 model.contains("Pixel 9", ignoreCase = true) ||
                 model.contains("Pixel 10", ignoreCase = true) ||
-                brand.contains("Google", ignoreCase = true)
+                brand.contains("Google", ignoreCase = true) ||
+                // Detectar modelos reales de Samsung flagships (SM-S9xxx para la serie S22+ y SM-F9xxx para Fold/Flip)
+                (brand.contains("samsung", ignoreCase = true) && (
+                    model.contains("SM-S9", ignoreCase = true) ||
+                    model.contains("SM-F9", ignoreCase = true)
+                ))
 
         val hasAiCorePackage = try {
             context.packageManager.getPackageInfo("com.google.android.aicore", 0) != null

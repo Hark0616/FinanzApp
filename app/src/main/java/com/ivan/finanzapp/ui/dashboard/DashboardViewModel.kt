@@ -54,7 +54,9 @@ class DashboardViewModel @Inject constructor(
             .withDayOfMonth(1)
             .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
-    val uiState: StateFlow<DashboardUiState> = combine(
+    private val _permissionCheckTrigger = MutableStateFlow(0)
+
+    private val _dbDataFlow = combine(
         accountDao.observeAccounts(),
         combine(creditCardDao.observeAll(), deferredPurchaseDao.observeAll()) { cards, purchases ->
             cards to purchases
@@ -138,23 +140,38 @@ class DashboardViewModel @Inject constructor(
 
         DashboardUiState(
             isLoading = false,
-            isNotificationPermissionGranted = isNotificationListenerEnabled(),
+            isNotificationPermissionGranted = false,
             totalBalance = totalBalance,
             accounts = accountSummaries,
             creditCards = cardSummaries,
             recentTransactions = recentTransactions,
             monthlySpendingByCategory = spendingItems,
             pendingReviewCount = pendingCount,
-            isAccountsExpanded = _isAccountsExpanded.value,
+            isAccountsExpanded = true,
             disposableCashFlow = disposableCashFlow,
             totalIncomesThisMonth = totalIncomesThisMonth,
             totalDebtInstallmentsThisMonth = totalDebtInstallmentsThisMonth
+        )
+    }
+
+    val uiState: StateFlow<DashboardUiState> = combine(
+        _dbDataFlow,
+        _isAccountsExpanded,
+        _permissionCheckTrigger
+    ) { dbState, isExpanded, _ ->
+        dbState.copy(
+            isAccountsExpanded = isExpanded,
+            isNotificationPermissionGranted = isNotificationListenerEnabled()
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = DashboardUiState()
     )
+
+    fun checkNotificationPermission() {
+        _permissionCheckTrigger.update { it + 1 }
+    }
 
     fun toggleAccountsExpanded() {
         _isAccountsExpanded.update { !it }
