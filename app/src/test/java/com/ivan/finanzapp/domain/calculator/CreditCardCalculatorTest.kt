@@ -199,6 +199,39 @@ class CreditCardCalculatorTest {
     }
 
     @Test
+    fun minimumPaymentUsesConfiguredPercentageOfCurrentDebt() {
+        val card = creditCard(
+            currentDebt = 1_000_000.0,
+            minPaymentPercentage = 10.0,
+            minPaymentFloor = 0.0
+        )
+
+        assertEquals(100_000.0, calculator.minimumPayment(card), MONEY_DELTA)
+    }
+
+    @Test
+    fun minimumPaymentUsesConfiguredFloorWhenPercentageIsLower() {
+        val card = creditCard(
+            currentDebt = 100_000.0,
+            minPaymentPercentage = 5.0,
+            minPaymentFloor = 20_000.0
+        )
+
+        assertEquals(20_000.0, calculator.minimumPayment(card), MONEY_DELTA)
+    }
+
+    @Test
+    fun minimumPaymentNeverExceedsCurrentDebt() {
+        val card = creditCard(
+            currentDebt = 12_000.0,
+            minPaymentPercentage = 5.0,
+            minPaymentFloor = 20_000.0
+        )
+
+        assertEquals(12_000.0, calculator.minimumPayment(card), MONEY_DELTA)
+    }
+
+    @Test
     fun projectedMonthlyInterestReturnsNullWhenCardHasNoRate() {
         val card = creditCard(interestRateEA = null)
 
@@ -280,6 +313,8 @@ class CreditCardCalculatorTest {
         currentDebt: Double = 0.0,
         cutoffDay: Int = 15,
         paymentDueDay: Int = 30,
+        minPaymentPercentage: Double = 5.0,
+        minPaymentFloor: Double = 0.0,
         interestRateEA: Double? = null
     ) = CreditCardEntity(
         id = id,
@@ -288,6 +323,8 @@ class CreditCardCalculatorTest {
         currentDebt = currentDebt,
         cutoffDay = cutoffDay,
         paymentDueDay = paymentDueDay,
+        minPaymentPercentage = minPaymentPercentage,
+        minPaymentFloor = minPaymentFloor,
         interestRateEA = interestRateEA
     )
 

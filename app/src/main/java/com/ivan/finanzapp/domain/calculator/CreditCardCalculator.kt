@@ -166,14 +166,21 @@ class CreditCardCalculator @Inject constructor() {
     }
 
     /**
-     * Pago mínimo requerido.
-     * Es la suma de las cuotas que corresponden al periodo de facturación actual (al corte actual).
+     * Pago mínimo estimado.
+     *
+     * Usa la configuración de la tarjeta: porcentaje mínimo sobre la deuda y
+     * piso mínimo en pesos. El resultado nunca supera la deuda actual.
+     *
+     * El parámetro [deferredPurchases] se conserva por compatibilidad con las
+     * pantallas actuales; el pago mínimo depende de la deuda total configurada
+     * en la tarjeta, no de las cuotas facturadas del periodo.
      */
+    @Suppress("UNUSED_PARAMETER")
     fun minimumPayment(card: CreditCardEntity, deferredPurchases: List<DeferredPurchaseEntity> = emptyList()): Double {
         if (card.currentDebt <= 0.0) return 0.0
-        val cutoffDate = nextBillingCutoffDate(card)
-        val amountDue = totalAmountDue(deferredPurchases, card.interestRateEA, card.cutoffDay, cutoffDate)
-        return amountDue.coerceAtMost(card.currentDebt)
+        val percentagePayment = card.currentDebt * (card.minPaymentPercentage.coerceAtLeast(0.0) / 100.0)
+        val floorPayment = card.minPaymentFloor.coerceAtLeast(0.0)
+        return maxOf(percentagePayment, floorPayment).coerceAtMost(card.currentDebt)
     }
 
 

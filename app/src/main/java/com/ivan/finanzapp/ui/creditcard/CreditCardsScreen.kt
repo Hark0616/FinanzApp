@@ -321,7 +321,7 @@ private fun PhysicalLikeCreditCard(
 
             Spacer(Modifier.height(16.dp))
 
-            // Fechas y Pago mínimo
+            // Fechas y pago mínimo estimado
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -330,7 +330,7 @@ private fun PhysicalLikeCreditCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("Pago mínimo", color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
+                    Text("Pago mín. est.", color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
                     Text(formatCOP(summary.minimumPayment), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -522,7 +522,7 @@ private fun CreditCardDetailView(
                             letterSpacing = 1.sp
                         )
                         
-                        // Pago Mínimo
+                        // Pago mínimo estimado
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -544,7 +544,7 @@ private fun CreditCardDetailView(
                             Spacer(Modifier.width(16.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Pago Mínimo del Mes",
+                                    text = "Pago mínimo estimado",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
