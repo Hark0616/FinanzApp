@@ -457,12 +457,13 @@ fun RuleTrainerDialog(
                             onTxTypeExpandedChange = { txTypeExpanded = it }
                         )
                         4 -> Step4PreviewSave(
+                            tokens = tokens,
+                            selectedAmountIndices = selectedAmountIndices,
                             amountText = amountText,
                             merchantText = merchantText,
                             parsedAmount = parsedAmount,
                             amountFormatType = amountFormatType,
-                            onFormatTypeChange = { amountFormatType = it },
-                            generatedRegex = generatedRegex
+                            onFormatTypeChange = { amountFormatType = it }
                         )
                     }
                 }
@@ -1016,13 +1017,20 @@ private fun Step3Details(
 
 @Composable
 private fun Step4PreviewSave(
+    tokens: List<String>,
+    selectedAmountIndices: Set<Int>,
     amountText: String,
     merchantText: String,
     parsedAmount: Double?,
     amountFormatType: Int,
-    onFormatTypeChange: (Int) -> Unit,
-    generatedRegex: String
+    onFormatTypeChange: (Int) -> Unit
 ) {
+    val detectedDate = tokens.firstOrNull { it.matches(Regex("""\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}""")) } ?: "No detectada"
+    val detectedTime = tokens.firstOrNull { it.matches(Regex("""\d{1,2}:\d{2}(?::\d{2})?""")) } ?: "No detectada"
+    val detectedCard = tokens.firstOrNull { token ->
+        token.all { it.isDigit() } && token.length in 3..4 && !selectedAmountIndices.contains(tokens.indexOf(token))
+    } ?: "No detectada"
+
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxSize()
@@ -1104,21 +1112,6 @@ private fun Step4PreviewSave(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Texto seleccionado:", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            text = amountText,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
                         Text("Monto interpretado:", style = MaterialTheme.typography.bodyMedium)
                         Text(
                             text = if (parsedAmount != null) formatCOP(parsedAmount, showCents = true) else "Error al parsear",
@@ -1140,6 +1133,54 @@ private fun Step4PreviewSave(
                             text = if (merchantText.isNotBlank()) merchantText else "Sin especificar",
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Datos auto-detectados para dar tranquilidad al usuario
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Fecha auto-detectada:", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                        Text(
+                            text = detectedDate,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Hora auto-detectada:", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                        Text(
+                            text = detectedTime,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Tarjeta / Cuenta detectada:", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                        Text(
+                            text = detectedCard,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
