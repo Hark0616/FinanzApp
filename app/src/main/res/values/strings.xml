@@ -26,4 +26,10 @@
     <string name="cuota_minima">Cuota mínima</string>
     <string name="porcentaje_uso">Uso del cupo</string>
 
+    <!-- Shortcuts -->
+    <string name="shortcut_add_label">Registrar Gasto</string>
+    <string name="shortcut_add_long_label">Registrar nuevo gasto manualmente</string>
+    <string name="shortcut_unclassified_label">Clasificar Cuenta</string>
+    <string name="shortcut_unclassified_long_label">Ver movimientos pendientes de clasificar cuenta</string>
 </resources>
+

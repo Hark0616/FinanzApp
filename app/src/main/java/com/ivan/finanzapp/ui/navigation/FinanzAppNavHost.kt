@@ -49,9 +49,18 @@ fun FinanzAppNavHost(
             )
         }
 
-        composable(Screen.Transactions.route) {
-            com.ivan.finanzapp.ui.transactions.TransactionsScreen()
+        composable(
+            route = Screen.Transactions.route,
+            deepLinks = listOf(
+                androidx.navigation.navDeepLink {
+                    uriPattern = "finanzapp://transactions?action={action}"
+                }
+            )
+        ) { backStackEntry ->
+            val action = backStackEntry.arguments?.getString("action")
+            com.ivan.finanzapp.ui.transactions.TransactionsScreen(action = action)
         }
+
 
         composable(Screen.CreditCards.route) {
             com.ivan.finanzapp.ui.creditcard.CreditCardsScreen(navController = navController)
