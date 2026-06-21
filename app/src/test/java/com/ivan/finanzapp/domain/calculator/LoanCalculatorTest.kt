@@ -85,7 +85,9 @@ class LoanCalculatorTest {
 
         assertEquals(920_000.0, progress.remainingAmount, MONEY_DELTA)
         assertEquals(4, progress.paidInstallments)
+        assertEquals(20_000.0, progress.interestAccrued, MONEY_DELTA)
         assertEquals(20_000.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(0.0, progress.unpaidInterest, MONEY_DELTA)
         assertEquals(80_000.0, progress.principalPaid, MONEY_DELTA)
         assertEquals(100_000.0, progress.paymentAmount, MONEY_DELTA)
     }
@@ -102,8 +104,47 @@ class LoanCalculatorTest {
 
         assertEquals(0.0, progress.remainingAmount, MONEY_DELTA)
         assertEquals(1, progress.paidInstallments)
+        assertEquals(0.0, progress.interestAccrued, MONEY_DELTA)
+        assertEquals(0.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(0.0, progress.unpaidInterest, MONEY_DELTA)
         assertEquals(50_000.0, progress.principalPaid, MONEY_DELTA)
         assertEquals(50_000.0, progress.paymentAmount, MONEY_DELTA)
+    }
+
+    @Test
+    fun applyInstallmentPaymentCapsFinalPaymentAmountAfterInterest() {
+        val loan = loan(
+            remainingAmount = 50_000.0,
+            monthlyInterestRate = 2.0,
+            monthlyInstallmentAmount = 100_000.0
+        )
+
+        val progress = calculator.applyInstallmentPayment(loan)
+
+        assertEquals(0.0, progress.remainingAmount, MONEY_DELTA)
+        assertEquals(1_000.0, progress.interestAccrued, MONEY_DELTA)
+        assertEquals(1_000.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(0.0, progress.unpaidInterest, MONEY_DELTA)
+        assertEquals(50_000.0, progress.principalPaid, MONEY_DELTA)
+        assertEquals(51_000.0, progress.paymentAmount, MONEY_DELTA)
+    }
+
+    @Test
+    fun applyInstallmentPaymentTracksUnpaidInterestWhenInstallmentIsTooLow() {
+        val loan = loan(
+            remainingAmount = 1_000_000.0,
+            monthlyInterestRate = 15.0,
+            monthlyInstallmentAmount = 100_000.0
+        )
+
+        val progress = calculator.applyInstallmentPayment(loan)
+
+        assertEquals(1_000_000.0, progress.remainingAmount, MONEY_DELTA)
+        assertEquals(150_000.0, progress.interestAccrued, MONEY_DELTA)
+        assertEquals(100_000.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(50_000.0, progress.unpaidInterest, MONEY_DELTA)
+        assertEquals(0.0, progress.principalPaid, MONEY_DELTA)
+        assertEquals(100_000.0, progress.paymentAmount, MONEY_DELTA)
     }
 
     @Test
@@ -119,7 +160,9 @@ class LoanCalculatorTest {
 
         assertEquals(0.0, progress.remainingAmount, MONEY_DELTA)
         assertEquals(12, progress.paidInstallments)
+        assertEquals(0.0, progress.interestAccrued, MONEY_DELTA)
         assertEquals(0.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(0.0, progress.unpaidInterest, MONEY_DELTA)
         assertEquals(0.0, progress.principalPaid, MONEY_DELTA)
         assertEquals(0.0, progress.paymentAmount, MONEY_DELTA)
     }
@@ -137,7 +180,9 @@ class LoanCalculatorTest {
 
         assertEquals(1_000_000.0, progress.remainingAmount, MONEY_DELTA)
         assertEquals(3, progress.paidInstallments)
+        assertEquals(0.0, progress.interestAccrued, MONEY_DELTA)
         assertEquals(0.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(0.0, progress.unpaidInterest, MONEY_DELTA)
         assertEquals(0.0, progress.principalPaid, MONEY_DELTA)
         assertEquals(0.0, progress.paymentAmount, MONEY_DELTA)
     }

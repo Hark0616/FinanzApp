@@ -5,12 +5,15 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ivan.finanzapp.data.local.converters.Converters
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
+import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.AccountEntity
@@ -19,6 +22,7 @@ import com.ivan.finanzapp.data.local.entity.CreditCardEntity
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.LoanEntity
+import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
 import com.ivan.finanzapp.data.local.entity.MerchantCategoryMappingEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.data.local.entity.AssetEntity
@@ -33,10 +37,11 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         TransactionEntity::class,
         MerchantCategoryMappingEntity::class,
         LoanEntity::class,
+        LoanPaymentEntity::class,
         DeferredPurchaseEntity::class,
         AssetEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -48,6 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
     abstract fun merchantCategoryMappingDao(): MerchantCategoryMappingDao
     abstract fun loanDao(): LoanDao
+    abstract fun loanPaymentDao(): LoanPaymentDao
     abstract fun deferredPurchaseDao(): DeferredPurchaseDao
     abstract fun assetDao(): AssetDao
 
@@ -57,6 +63,37 @@ abstract class AppDatabase : RoomDatabase() {
 
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `loan_payments` (
+                        `id` TEXT NOT NULL,
+                        `loanId` TEXT NOT NULL,
+                        `transactionId` TEXT,
+                        `installmentNumber` INTEGER NOT NULL,
+                        `scheduledPaymentAmount` REAL NOT NULL,
+                        `actualPaymentAmount` REAL NOT NULL,
+                        `interestAccruedAmount` REAL NOT NULL,
+                        `interestPaidAmount` REAL NOT NULL,
+                        `unpaidInterestAmount` REAL NOT NULL,
+                        `principalAmount` REAL NOT NULL,
+                        `remainingAmountBefore` REAL NOT NULL,
+                        `remainingAmountAfter` REAL NOT NULL,
+                        `paymentDate` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`loanId`) REFERENCES `loans`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_loan_payments_loanId` ON `loan_payments` (`loanId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_loan_payments_transactionId` ON `loan_payments` (`transactionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_loan_payments_paymentDate` ON `loan_payments` (`paymentDate`)")
+            }
+        }
 
         /**
          * Crea (o retorna) la instancia única de la base de datos, cifrada
@@ -78,7 +115,7 @@ abstract class AppDatabase : RoomDatabase() {
             val factory: SupportSQLiteOpenHelper.Factory = SupportOpenHelperFactory(passphrase)
             return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .openHelperFactory(factory)
-                .fallbackToDestructiveMigration(dropAllTables = true)
+                .addMigrations(MIGRATION_5_6)
                 .build()
         }
     }

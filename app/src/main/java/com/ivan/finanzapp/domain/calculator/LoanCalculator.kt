@@ -33,14 +33,16 @@ class LoanCalculator @Inject constructor() {
             return LoanPaymentProgress(
                 remainingAmount = loan.remainingAmount.coerceAtLeast(0.0),
                 paidInstallments = loan.paidInstallments,
+                interestAccrued = 0.0,
                 interestPaid = 0.0,
+                unpaidInterest = 0.0,
                 principalPaid = 0.0,
                 paymentAmount = 0.0
             )
         }
 
-        val interestPaid = monthlyInterestAmount(loan.remainingAmount, loan.monthlyInterestRate)
-            .coerceAtMost(loan.monthlyInstallmentAmount.coerceAtLeast(0.0))
+        val interestAccrued = monthlyInterestAmount(loan.remainingAmount, loan.monthlyInterestRate)
+        val interestPaid = interestAccrued.coerceAtMost(loan.monthlyInstallmentAmount.coerceAtLeast(0.0))
         val principalPaid = principalPaid(
             remainingAmount = loan.remainingAmount,
             monthlyInterestRate = loan.monthlyInterestRate,
@@ -50,7 +52,9 @@ class LoanCalculator @Inject constructor() {
         return LoanPaymentProgress(
             remainingAmount = (loan.remainingAmount - principalPaid).coerceAtLeast(0.0),
             paidInstallments = loan.paidInstallments + 1,
+            interestAccrued = interestAccrued,
             interestPaid = interestPaid,
+            unpaidInterest = (interestAccrued - interestPaid).coerceAtLeast(0.0),
             principalPaid = principalPaid,
             paymentAmount = interestPaid + principalPaid
         )
@@ -60,7 +64,9 @@ class LoanCalculator @Inject constructor() {
 data class LoanPaymentProgress(
     val remainingAmount: Double,
     val paidInstallments: Int,
+    val interestAccrued: Double,
     val interestPaid: Double,
+    val unpaidInterest: Double,
     val principalPaid: Double,
     val paymentAmount: Double
 )

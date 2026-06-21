@@ -4,12 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
-import com.ivan.finanzapp.data.local.dao.TransactionDao
+import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.entity.LoanEntity
-import com.ivan.finanzapp.data.local.entity.TransactionEntity
-import com.ivan.finanzapp.domain.calculator.LoanCalculator
 import com.ivan.finanzapp.domain.model.AccountType
-import com.ivan.finanzapp.domain.model.TransactionType
+import com.ivan.finanzapp.domain.usecase.LoanPaymentRegistrar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,7 +16,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
@@ -28,8 +25,8 @@ import javax.inject.Inject
 class LoansViewModel @Inject constructor(
     private val loanDao: LoanDao,
     private val accountDao: AccountDao,
-    private val transactionDao: TransactionDao,
-    private val loanCalculator: LoanCalculator
+    private val loanPaymentDao: LoanPaymentDao,
+    private val loanPaymentRegistrar: LoanPaymentRegistrar
 ) : ViewModel() {
 
     private val _isAddDialogVisible = MutableStateFlow(false)
@@ -37,15 +34,20 @@ class LoansViewModel @Inject constructor(
     val uiState: StateFlow<LoansUiState> = combine(
         loanDao.observeAll(),
         accountDao.observeAccounts(),
+        loanPaymentDao.observeLatestByLoan(),
+        loanPaymentDao.observeTotalUnpaidInterest(),
         _isAddDialogVisible
-    ) { loans, accounts, isAddDialogVisible ->
+    ) { loans, accounts, loanPayments, totalUnpaidInterest, isAddDialogVisible ->
         val totalDebt = loans.sumOf { it.remainingAmount }
         val savingsAccounts = accounts.filter { it.type != AccountType.TARJETA_CREDITO }
+        val latestPaymentsByLoanId = loanPayments.associateBy { it.loanId }
         LoansUiState(
             isLoading = false,
             loans = loans,
             accounts = savingsAccounts,
+            latestPaymentsByLoanId = latestPaymentsByLoanId,
             totalDebt = totalDebt,
+            totalUnpaidInterest = totalUnpaidInterest,
             isAddDialogVisible = isAddDialogVisible
         )
     }.stateIn(
@@ -69,12 +71,14 @@ class LoansViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             val today = LocalDate.now()
+            val normalizedPaymentDay = paymentDay.coerceIn(1, 31)
+            val normalizedInstallments = totalInstallments.coerceAtLeast(1)
             var paymentDate = LocalDate.of(
                 today.year,
                 today.month,
-                paymentDay.coerceAtMost(today.month.length(today.isLeapYear))
+                normalizedPaymentDay.coerceAtMost(today.month.length(today.isLeapYear))
             )
-            if (today.dayOfMonth >= paymentDay) {
+            if (today.dayOfMonth >= normalizedPaymentDay) {
                 paymentDate = paymentDate.plusMonths(1)
             }
             val nextPaymentDateMillis = paymentDate.atStartOfDay(ZoneId.systemDefault())
@@ -87,10 +91,10 @@ class LoansViewModel @Inject constructor(
                 totalAmount = totalAmount,
                 remainingAmount = totalAmount,
                 monthlyInterestRate = interestRate,
-                totalInstallments = totalInstallments,
+                totalInstallments = normalizedInstallments,
                 paidInstallments = 0,
                 monthlyInstallmentAmount = monthlyInstallment,
-                paymentDay = paymentDay,
+                paymentDay = normalizedPaymentDay,
                 nextPaymentDate = nextPaymentDateMillis,
                 linkedAccountId = linkedAccountId
             )
@@ -101,46 +105,7 @@ class LoansViewModel @Inject constructor(
 
     fun payInstallment(loan: LoanEntity) {
         viewModelScope.launch {
-            val paymentProgress = loanCalculator.applyInstallmentPayment(loan)
-            if (paymentProgress.paymentAmount <= 0.0) return@launch
-
-            // Calcular siguiente fecha de pago (+1 mes)
-            val currentPaymentDate = Instant.ofEpochMilli(loan.nextPaymentDate)
-                .atZone(ZoneId.systemDefault())
-                .toLocalDate()
-            val nextPaymentDate = currentPaymentDate.plusMonths(1)
-            val nextPaymentDateMillis = nextPaymentDate.atStartOfDay(ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
-
-            // 1. Actualizar el progreso del crédito
-            loanDao.updateLoanPaymentProgress(
-                loanId = loan.id,
-                remainingAmount = paymentProgress.remainingAmount,
-                paidInstallments = paymentProgress.paidInstallments,
-                nextPaymentDate = nextPaymentDateMillis
-            )
-
-            // 2. Registrar el movimiento en el historial
-            val transactionId = UUID.randomUUID().toString()
-            val transaction = TransactionEntity(
-                id = transactionId,
-                accountId = loan.linkedAccountId,
-                amount = paymentProgress.paymentAmount,
-                type = TransactionType.GASTO,
-                merchant = "Pago Cuota: ${loan.name}",
-                categoryId = null, // Dejar sin categorizar o resuelto
-                rawNotification = "Pago de cuota manual registrado en app",
-                timestamp = System.currentTimeMillis(),
-                confirmedByAI = false,
-                needsReview = false
-            )
-            transactionDao.insertIfNotExists(transaction)
-
-            // 3. Si hay una cuenta vinculada, debitar el saldo automáticamente
-            loan.linkedAccountId?.let { accountId ->
-                accountDao.adjustBalance(accountId, -paymentProgress.paymentAmount)
-            }
+            loanPaymentRegistrar.registerInstallmentPayment(loan.id)
         }
     }
 
