@@ -34,7 +34,8 @@ enum class BankSource {
 }
 
 enum class LoanAmortizationType(val displayName: String) {
-    FIXED_INSTALLMENT("Cuota fija")
+    FIXED_INSTALLMENT("Cuota fija"),
+    FIXED_PRINCIPAL("Capital fijo mensual")
 }
 
 enum class LoanInterestRateType(

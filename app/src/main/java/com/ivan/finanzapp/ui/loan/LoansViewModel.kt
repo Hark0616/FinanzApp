@@ -81,6 +81,7 @@ class LoansViewModel @Inject constructor(
         totalAmount: Double,
         interestRate: Double,
         interestRateType: LoanInterestRateType,
+        amortizationType: LoanAmortizationType,
         totalInstallments: Int,
         monthlyInstallment: Double,
         monthlyInsurance: Double,
@@ -107,6 +108,21 @@ class LoansViewModel @Inject constructor(
                 interestRateInputValue = interestRate,
                 interestRateType = interestRateType
             )
+            val normalizedInsurance = monthlyInsurance.coerceAtLeast(0.0)
+            val normalizedFee = monthlyFee.coerceAtLeast(0.0)
+            val fixedPrincipalAmount = when (amortizationType) {
+                LoanAmortizationType.FIXED_INSTALLMENT -> 0.0
+                LoanAmortizationType.FIXED_PRINCIPAL ->
+                    loanCalculator.fixedPrincipalAmount(totalAmount, normalizedInstallments)
+            }
+            val firstScheduledPaymentAmount = when (amortizationType) {
+                LoanAmortizationType.FIXED_INSTALLMENT -> monthlyInstallment.coerceAtLeast(0.0)
+                LoanAmortizationType.FIXED_PRINCIPAL ->
+                    normalizedInsurance +
+                            normalizedFee +
+                            loanCalculator.monthlyInterestAmount(totalAmount, normalizedMonthlyRate) +
+                            fixedPrincipalAmount
+            }
 
             val loan = LoanEntity(
                 id = UUID.randomUUID().toString(),
@@ -116,12 +132,13 @@ class LoansViewModel @Inject constructor(
                 monthlyInterestRate = normalizedMonthlyRate,
                 interestRateInputValue = interestRate,
                 interestRateType = interestRateType,
-                amortizationType = LoanAmortizationType.FIXED_INSTALLMENT,
+                amortizationType = amortizationType,
                 totalInstallments = normalizedInstallments,
                 paidInstallments = 0,
-                monthlyInstallmentAmount = monthlyInstallment,
-                monthlyInsuranceAmount = monthlyInsurance.coerceAtLeast(0.0),
-                monthlyFeeAmount = monthlyFee.coerceAtLeast(0.0),
+                monthlyInstallmentAmount = firstScheduledPaymentAmount,
+                fixedPrincipalAmount = fixedPrincipalAmount,
+                monthlyInsuranceAmount = normalizedInsurance,
+                monthlyFeeAmount = normalizedFee,
                 paymentDay = normalizedPaymentDay,
                 nextPaymentDate = nextPaymentDateMillis,
                 linkedAccountId = linkedAccountId
@@ -131,9 +148,15 @@ class LoansViewModel @Inject constructor(
         }
     }
 
-    fun payInstallment(loan: LoanEntity) {
+    fun payInstallment(
+        loan: LoanEntity,
+        actualPaymentAmount: Double? = null
+    ) {
         viewModelScope.launch {
-            loanPaymentRegistrar.registerInstallmentPayment(loan.id)
+            loanPaymentRegistrar.registerInstallmentPayment(
+                loanId = loan.id,
+                actualPaymentAmount = actualPaymentAmount
+            )
         }
     }
 

@@ -1,6 +1,7 @@
 package com.ivan.finanzapp.domain.calculator
 
 import com.ivan.finanzapp.data.local.entity.LoanEntity
+import com.ivan.finanzapp.domain.model.LoanAmortizationType
 import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -57,6 +58,22 @@ class LoanCalculatorTest {
         )
 
         assertEquals(0.0, interest, MONEY_DELTA)
+    }
+
+    @Test
+    fun fixedPrincipalAmountDividesDebtAcrossInstallments() {
+        val principal = calculator.fixedPrincipalAmount(
+            totalAmount = 1_200_000.0,
+            totalInstallments = 12
+        )
+
+        assertEquals(100_000.0, principal, MONEY_DELTA)
+    }
+
+    @Test
+    fun fixedPrincipalAmountIsZeroForInvalidTerms() {
+        assertEquals(0.0, calculator.fixedPrincipalAmount(1_200_000.0, 0), MONEY_DELTA)
+        assertEquals(0.0, calculator.fixedPrincipalAmount(0.0, 12), MONEY_DELTA)
     }
 
     @Test
@@ -158,6 +175,128 @@ class LoanCalculatorTest {
         assertEquals(20_000.0, progress.interestPaid, MONEY_DELTA)
         assertEquals(65_000.0, progress.principalPaid, MONEY_DELTA)
         assertEquals(100_000.0, progress.paymentAmount, MONEY_DELTA)
+    }
+
+    @Test
+    fun applyInstallmentPaymentAppliesAmountAboveInstallmentToExtraPrincipal() {
+        val loan = loan(
+            remainingAmount = 1_000_000.0,
+            monthlyInterestRate = 2.0,
+            monthlyInstallmentAmount = 100_000.0
+        )
+
+        val progress = calculator.applyInstallmentPayment(
+            loan = loan,
+            actualPaymentAmount = 110_000.0
+        )
+
+        assertEquals(910_000.0, progress.remainingAmount, MONEY_DELTA)
+        assertEquals(100_000.0, progress.scheduledPaymentAmount, MONEY_DELTA)
+        assertEquals(110_000.0, progress.paymentAmount, MONEY_DELTA)
+        assertEquals(20_000.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(90_000.0, progress.principalPaid, MONEY_DELTA)
+        assertEquals(10_000.0, progress.extraPrincipalAmount, MONEY_DELTA)
+        assertEquals(0.0, progress.unappliedPaymentAmount, MONEY_DELTA)
+    }
+
+    @Test
+    fun applyInstallmentPaymentTracksUnappliedAmountWhenPaymentExceedsClosure() {
+        val loan = loan(
+            remainingAmount = 50_000.0,
+            monthlyInterestRate = 2.0,
+            monthlyInstallmentAmount = 40_000.0
+        )
+
+        val progress = calculator.applyInstallmentPayment(
+            loan = loan,
+            actualPaymentAmount = 80_000.0
+        )
+
+        assertEquals(0.0, progress.remainingAmount, MONEY_DELTA)
+        assertEquals(40_000.0, progress.scheduledPaymentAmount, MONEY_DELTA)
+        assertEquals(51_000.0, progress.paymentAmount, MONEY_DELTA)
+        assertEquals(1_000.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(50_000.0, progress.principalPaid, MONEY_DELTA)
+        assertEquals(11_000.0, progress.extraPrincipalAmount, MONEY_DELTA)
+        assertEquals(29_000.0, progress.unappliedPaymentAmount, MONEY_DELTA)
+    }
+
+    @Test
+    fun scheduledPaymentAmountForFixedPrincipalIncludesChargesInterestAndPrincipal() {
+        val loan = loan(
+            remainingAmount = 1_000_000.0,
+            monthlyInterestRate = 2.0,
+            monthlyInstallmentAmount = 0.0,
+            fixedPrincipalAmount = 80_000.0,
+            monthlyInsuranceAmount = 10_000.0,
+            monthlyFeeAmount = 5_000.0,
+            amortizationType = LoanAmortizationType.FIXED_PRINCIPAL
+        )
+
+        val paymentAmount = calculator.scheduledPaymentAmount(loan)
+
+        assertEquals(115_000.0, paymentAmount, MONEY_DELTA)
+    }
+
+    @Test
+    fun applyInstallmentPaymentForFixedPrincipalReducesPrincipalByFixedAmount() {
+        val loan = loan(
+            remainingAmount = 1_000_000.0,
+            monthlyInterestRate = 2.0,
+            monthlyInstallmentAmount = 0.0,
+            fixedPrincipalAmount = 80_000.0,
+            monthlyInsuranceAmount = 10_000.0,
+            monthlyFeeAmount = 5_000.0,
+            amortizationType = LoanAmortizationType.FIXED_PRINCIPAL
+        )
+
+        val progress = calculator.applyInstallmentPayment(loan)
+
+        assertEquals(920_000.0, progress.remainingAmount, MONEY_DELTA)
+        assertEquals(115_000.0, progress.scheduledPaymentAmount, MONEY_DELTA)
+        assertEquals(10_000.0, progress.insurancePaid, MONEY_DELTA)
+        assertEquals(5_000.0, progress.feePaid, MONEY_DELTA)
+        assertEquals(20_000.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(80_000.0, progress.principalPaid, MONEY_DELTA)
+        assertEquals(115_000.0, progress.paymentAmount, MONEY_DELTA)
+    }
+
+    @Test
+    fun applyInstallmentPaymentForFixedPrincipalCapsFinalPrincipalPayment() {
+        val loan = loan(
+            remainingAmount = 50_000.0,
+            monthlyInterestRate = 2.0,
+            monthlyInstallmentAmount = 0.0,
+            fixedPrincipalAmount = 80_000.0,
+            amortizationType = LoanAmortizationType.FIXED_PRINCIPAL
+        )
+
+        val progress = calculator.applyInstallmentPayment(loan)
+
+        assertEquals(0.0, progress.remainingAmount, MONEY_DELTA)
+        assertEquals(51_000.0, progress.scheduledPaymentAmount, MONEY_DELTA)
+        assertEquals(1_000.0, progress.interestPaid, MONEY_DELTA)
+        assertEquals(50_000.0, progress.principalPaid, MONEY_DELTA)
+        assertEquals(51_000.0, progress.paymentAmount, MONEY_DELTA)
+    }
+
+    @Test
+    fun applyInstallmentPaymentForFixedPrincipalDoesNotAdvanceWithoutPrincipalAmount() {
+        val loan = loan(
+            remainingAmount = 1_000_000.0,
+            monthlyInterestRate = 2.0,
+            monthlyInstallmentAmount = 0.0,
+            fixedPrincipalAmount = 0.0,
+            amortizationType = LoanAmortizationType.FIXED_PRINCIPAL,
+            paidInstallments = 4
+        )
+
+        val progress = calculator.applyInstallmentPayment(loan)
+
+        assertEquals(1_000_000.0, progress.remainingAmount, MONEY_DELTA)
+        assertEquals(4, progress.paidInstallments)
+        assertEquals(0.0, progress.scheduledPaymentAmount, MONEY_DELTA)
+        assertEquals(0.0, progress.paymentAmount, MONEY_DELTA)
     }
 
     @Test
@@ -283,8 +422,10 @@ class LoanCalculatorTest {
         remainingAmount: Double,
         monthlyInterestRate: Double,
         monthlyInstallmentAmount: Double,
+        fixedPrincipalAmount: Double = 0.0,
         monthlyInsuranceAmount: Double = 0.0,
         monthlyFeeAmount: Double = 0.0,
+        amortizationType: LoanAmortizationType = LoanAmortizationType.FIXED_INSTALLMENT,
         paidInstallments: Int = 0
     ) = LoanEntity(
         id = "loan",
@@ -292,9 +433,11 @@ class LoanCalculatorTest {
         totalAmount = 1_000_000.0,
         remainingAmount = remainingAmount,
         monthlyInterestRate = monthlyInterestRate,
+        amortizationType = amortizationType,
         totalInstallments = 12,
         paidInstallments = paidInstallments,
         monthlyInstallmentAmount = monthlyInstallmentAmount,
+        fixedPrincipalAmount = fixedPrincipalAmount,
         monthlyInsuranceAmount = monthlyInsuranceAmount,
         monthlyFeeAmount = monthlyFeeAmount,
         paymentDay = 15,
