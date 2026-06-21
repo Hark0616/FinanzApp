@@ -54,7 +54,7 @@ interface TransactionDao {
         """
         SELECT categoryId, SUM(amount) as total
         FROM transactions
-        WHERE type IN ('GASTO', 'GASTO_TC')
+        WHERE type IN ('GASTO', 'GASTO_TC', 'TRANSFERENCIA')
           AND timestamp >= :startMillis AND timestamp < :endMillis
         GROUP BY categoryId
         ORDER BY total DESC

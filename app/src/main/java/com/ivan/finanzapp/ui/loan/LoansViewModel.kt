@@ -7,6 +7,7 @@ import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
+import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.model.TransactionType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,10 +38,11 @@ class LoansViewModel @Inject constructor(
         _isAddDialogVisible
     ) { loans, accounts, isAddDialogVisible ->
         val totalDebt = loans.sumOf { it.remainingAmount }
+        val savingsAccounts = accounts.filter { it.type != AccountType.TARJETA_CREDITO }
         LoansUiState(
             isLoading = false,
             loans = loans,
-            accounts = accounts,
+            accounts = savingsAccounts,
             totalDebt = totalDebt,
             isAddDialogVisible = isAddDialogVisible
         )
