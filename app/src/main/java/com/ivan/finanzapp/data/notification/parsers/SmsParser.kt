@@ -57,6 +57,10 @@ class SmsParser : BankParser {
             )
         }
 
+        DaviplataMessagePatterns.parse(title, text)?.let { parsed ->
+            return parsed
+        }
+
         val currentSource = if (isBancolombia) BankSource.BANCOLOMBIA else BankSource.SMS
 
         // 1. Bancolombia Compra

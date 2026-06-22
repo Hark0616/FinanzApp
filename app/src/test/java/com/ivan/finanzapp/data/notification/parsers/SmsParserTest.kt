@@ -45,7 +45,86 @@ class SmsParserTest {
         }
     }
 
+    @Test
+    fun parsesRealDaviplataSmsMessages() {
+        val cases = listOf(
+            "DaviPlata: Recibiste plata por BreB por valor de \$18,500. Consulte el detalle de sus movimientos desde la aplicacion." to
+                    ExpectedTransaction(TransactionType.INGRESO, 18_500.0, "BreB"),
+            "DaviPlata: Recibiste plata por BreB por valor de \$12,000. Consulte el detalle de sus movimientos desde la aplicacion." to
+                    ExpectedTransaction(TransactionType.INGRESO, 12_000.0, "BreB"),
+            "DaviPlata: Recibiste plata por BreB por valor de \$15,000. Consulte el detalle de sus movimientos desde la aplicacion." to
+                    ExpectedTransaction(TransactionType.INGRESO, 15_000.0, "BreB"),
+            "DaviPlata: Recibiste plata por BreB por valor de \$12,000. Consulte el detalle de sus movimientos desde la aplicacion." to
+                    ExpectedTransaction(TransactionType.INGRESO, 12_000.0, "BreB"),
+            "DaviPlata: Recibiste plata por BreB por valor de \$80,000. Consulte el detalle de sus movimientos desde la aplicacion." to
+                    ExpectedTransaction(TransactionType.INGRESO, 80_000.0, "BreB"),
+            "DaviPlata: acabas de Sacar \$140,000 de tu DaviPlata. Para saber mas, consulta tus movimientos en la app." to
+                    ExpectedTransaction(TransactionType.TRANSFERENCIA, 140_000.0, "Retiro DaviPlata"),
+            "DaviPlata: acabas de hacer una compra por PSE de \$60,000. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 60_000.0, "PSE"),
+            "Recibiste \$300,000. Para saber mas, consulta tus movimientos." to
+                    ExpectedTransaction(TransactionType.INGRESO, 300_000.0, "Transferencia recibida"),
+            "DaviPlata: acabas de hacer una compra por PSE de \$91,087. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 91_087.0, "PSE"),
+            "DaviPlata: acabas de hacer una compra por PSE de \$12,800. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 12_800.0, "PSE"),
+            "Recibiste \$237,001. Para saber mas, consulta tus movimientos." to
+                    ExpectedTransaction(TransactionType.INGRESO, 237_001.0, "Transferencia recibida"),
+            "DaviPlata: Pago exitoso por \$204,949. Para saber mas consulta tus movimientos en la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 204_949.0, "Pago DaviPlata"),
+            "DaviPlata: acabas de hacer una compra por PSE de \$3,566,187. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 3_566_187.0, "PSE"),
+            "Recibiste \$150,000. Para saber mas, consulta tus movimientos." to
+                    ExpectedTransaction(TransactionType.INGRESO, 150_000.0, "Transferencia recibida"),
+            "Se realizo un descuento de \$50,000 en tu DaviPlata o App Civica. Para saber mas consulta tus movimientos desde la aplicacion." to
+                    ExpectedTransaction(TransactionType.GASTO, 50_000.0, "Descuento DaviPlata"),
+            "DaviPlata: tu compra de \$29,000 por codigo QR fue exitosa. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 29_000.0, "Compra QR"),
+            "DaviPlata: tu compra de \$106,000 por codigo QR fue exitosa. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 106_000.0, "Compra QR"),
+            "DaviPlata: tu compra de \$20,000 por codigo QR fue exitosa. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 20_000.0, "Compra QR"),
+            "DaviPlata: tu compra de \$36,100 por codigo QR fue exitosa. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 36_100.0, "Compra QR"),
+            "DaviPlata: tu compra de \$18,000 por codigo QR fue exitosa. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 18_000.0, "Compra QR"),
+            "DaviPlata: recibiste \$1,178,696 desde una cuenta Davivienda. Usalos para pagar, comprar y mucho mas! Conoce todo lo que puedes hacer en [www.daviplata.com](http://www.daviplata.com)" to
+                    ExpectedTransaction(TransactionType.INGRESO, 1_178_696.0, "Cuenta Davivienda"),
+            "Recibiste \$959,000. Para saber mas, consulta tus movimientos." to
+                    ExpectedTransaction(TransactionType.INGRESO, 959_000.0, "Transferencia recibida"),
+            "DaviPlata: tu compra de \$68,000 por codigo QR fue exitosa. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 68_000.0, "Compra QR"),
+            "DaviPlata: Pasaste plata a otro banco por valor de \$310,000. Consulta el detalle de tus movimientos desde la aplicacion." to
+                    ExpectedTransaction(TransactionType.TRANSFERENCIA, 310_000.0, "Otro banco"),
+            "DaviPlata: Pasaste plata a otro banco por valor de \$45,000. Consulta el detalle de tus movimientos desde la aplicacion." to
+                    ExpectedTransaction(TransactionType.TRANSFERENCIA, 45_000.0, "Otro banco"),
+            "DaviPlata: tu compra de \$16,000 por codigo QR fue exitosa. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 16_000.0, "Compra QR"),
+            "DaviPlata: tu compra de \$8,000 por codigo QR fue exitosa. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 8_000.0, "Compra QR"),
+            "DaviPlata: tu compra de \$5,000 por codigo QR fue exitosa. Para saber mas, consulta tus movimientos desde la app DaviPlata." to
+                    ExpectedTransaction(TransactionType.GASTO, 5_000.0, "Compra QR")
+        )
+
+        for ((message, expected) in cases) {
+            val parsed = parser.parse(title = "", text = message)
+
+            assertNotNull("Expected DaviPlata SMS to parse: $message", parsed)
+            requireNotNull(parsed)
+            assertEquals(expected.type, parsed.type)
+            assertEquals(expected.amount, parsed.amount, MONEY_DELTA)
+            assertEquals(expected.merchant, parsed.merchant)
+            assertEquals(BankSource.DAVIPLATA, parsed.source)
+        }
+    }
+
     private data class ExpectedPurchase(
+        val amount: Double,
+        val merchant: String
+    )
+
+    private data class ExpectedTransaction(
+        val type: TransactionType,
         val amount: Double,
         val merchant: String
     )

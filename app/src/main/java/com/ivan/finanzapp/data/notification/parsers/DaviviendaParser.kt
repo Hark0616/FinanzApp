@@ -21,6 +21,7 @@ class DaviviendaParser : BankParser {
     override val source = BankSource.DAVIVIENDA
 
     override val packageNames: Set<String> = setOf(
+        "com.davivienda.daviviendaapp",
         "com.davivienda.daviviendamovil",
         "com.davivienda.banca_movil" // nombre alternativo conocido del paquete
     )
