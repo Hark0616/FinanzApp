@@ -37,6 +37,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var accountToDelete by remember { mutableStateOf<AccountEntity?>(null) }
 
     Scaffold { innerPadding ->
         LazyColumn(
@@ -79,7 +80,7 @@ fun SettingsScreen(
                 items(state.accounts, key = { it.id }) { account ->
                     AccountItemRow(
                         account = account,
-                        onDeleteClick = { viewModel.deleteAccount(account.id) }
+                        onDeleteClick = { accountToDelete = account }
                     )
                 }
             }
@@ -145,6 +146,36 @@ fun SettingsScreen(
                 onDismiss = { viewModel.toggleAddAccountDialog(false) },
                 onConfirm = { name, type, balance, limit, cutoff, due, interest, digits ->
                     viewModel.addAccount(name, type, balance, limit, cutoff, due, interest, digits)
+                }
+            )
+        }
+
+        // Diálogo de Confirmación para Eliminar Cuenta
+        accountToDelete?.let { account ->
+            AlertDialog(
+                onDismissRequest = { accountToDelete = null },
+                title = { Text("Eliminar cuenta / instrumento") },
+                text = {
+                    Text(
+                        "¿Estás seguro de que deseas eliminar la cuenta \"${account.name}\"? " +
+                                "Esto desvinculará sus transacciones y eliminará de forma permanente sus tarjetas de crédito asociadas."
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.deleteAccount(account.id)
+                            accountToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Eliminar")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { accountToDelete = null }) {
+                        Text("Cancelar")
+                    }
                 }
             )
         }
