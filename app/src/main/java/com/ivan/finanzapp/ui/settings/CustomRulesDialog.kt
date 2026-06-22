@@ -341,8 +341,11 @@ fun RuleTrainerDialog(
     var transactionType by remember { mutableStateOf(TransactionType.GASTO) }
     var amountFormatType by remember { mutableStateOf(0) } // 0 = LatAm, 1 = US, 2 = Plano
 
-    // Selection UI: indices in rawText split by space
-    val tokens = remember(rawText) { rawText.trim().split(Regex("""\s+""")).filter { it.isNotEmpty() } }
+    // Selection UI: indices in rawText split by space and non-numeric commas
+    val tokens = remember(rawText) {
+        val preparedText = rawText.replace(Regex("(?<!\\d),|,(?!\\d)"), " , ")
+        preparedText.trim().split(Regex("""\s+""")).filter { it.isNotEmpty() }
+    }
     var selectedAmountIndices by remember(rawText) { mutableStateOf(guessAmountIndex(tokens)) }
     var selectedMerchantIndices by remember(rawText) { mutableStateOf(guessMerchantIndices(rawText, tokens)) }
 
