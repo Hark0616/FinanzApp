@@ -75,7 +75,22 @@ fun FinanzAppNavHost(
         }
 
         composable(Screen.Settings.route) {
-            com.ivan.finanzapp.ui.settings.SettingsScreen()
+            com.ivan.finanzapp.ui.settings.SettingsScreen(
+                onNavigateToAuth = {
+                    navController.navigate(Screen.Auth.route)
+                }
+            )
+        }
+
+        composable(Screen.Auth.route) {
+            com.ivan.finanzapp.ui.auth.AuthScreen(
+                onAuthSuccess = {
+                    navController.popBackStack()
+                },
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
         }
     }
 }

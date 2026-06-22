@@ -34,6 +34,7 @@ import androidx.compose.ui.window.DialogProperties
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    onNavigateToAuth: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -82,6 +83,97 @@ fun SettingsScreen(
                         account = account,
                         onDeleteClick = { accountToDelete = account }
                     )
+                }
+            }
+
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            }
+
+            // Sección: Copia de Seguridad y Sincronización en la Nube
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (state.currentUserEmail != null) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                                contentDescription = null,
+                                tint = if (state.currentUserEmail != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Copia de Seguridad (Supabase)",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (state.currentUserEmail != null)
+                                        "Conectado: ${state.currentUserEmail}"
+                                    else "Sincronización inactiva. Los datos están 100% locales.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (state.currentUserEmail != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = { viewModel.syncNow() },
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    enabled = !state.isSyncing
+                                ) {
+                                    if (state.isSyncing) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    }
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Sincronizar", fontSize = 12.sp)
+                                }
+                                TextButton(
+                                    onClick = { viewModel.signOut() }
+                                ) {
+                                    Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Cerrar Sesión", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        } else {
+                            Button(
+                                onClick = onNavigateToAuth,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Conectar con Supabase", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
 

@@ -20,6 +20,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+import com.ivan.finanzapp.data.local.dao.SyncDeleteLogDao
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -73,4 +75,8 @@ object DatabaseModule {
     @Provides
     fun provideNotificationSyncLedgerDao(db: AppDatabase): NotificationSyncLedgerDao =
         db.notificationSyncLedgerDao()
+
+    @Provides
+    fun provideSyncDeleteLogDao(db: AppDatabase): SyncDeleteLogDao =
+        db.syncDeleteLogDao()
 }

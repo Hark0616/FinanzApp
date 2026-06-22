@@ -15,5 +15,7 @@ data class SettingsUiState(
     val isSavedSuccess: Boolean = false,
     val isLocalAiSupported: Boolean = false,
     val isLocalAiEnabled: Boolean = false,
-    val processingMode: String = SecurePrefs.MODE_PARSER
+    val processingMode: String = SecurePrefs.MODE_PARSER,
+    val currentUserEmail: String? = null,
+    val isSyncing: Boolean = false
 )

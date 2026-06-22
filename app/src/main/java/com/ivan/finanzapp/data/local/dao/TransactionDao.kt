@@ -42,6 +42,12 @@ interface TransactionDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(transaction: TransactionEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(transaction: TransactionEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(transactions: List<TransactionEntity>)
+
     @Update
     suspend fun update(transaction: TransactionEntity)
 
@@ -73,4 +79,7 @@ interface TransactionDao {
         """
     )
     fun observeByDateRange(startMillis: Long, endMillis: Long): Flow<List<TransactionEntity>>
+
+    @Query("SELECT * FROM transactions")
+    suspend fun getAllSnapshot(): List<TransactionEntity>
 }

@@ -28,4 +28,7 @@ interface DeferredPurchaseDao {
 
     @Query("DELETE FROM deferred_purchases WHERE id = :id AND paidInstallments >= totalInstallments")
     suspend fun deleteIfFullyPaid(id: String)
+
+    @Query("SELECT * FROM deferred_purchases")
+    suspend fun getAllSnapshot(): List<DeferredPurchaseEntity>
 }

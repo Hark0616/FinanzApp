@@ -28,7 +28,9 @@ class SettingsViewModel @Inject constructor(
     private val accountDao: AccountDao,
     private val creditCardDao: CreditCardDao,
     private val customRuleDao: CustomRuleDao,
-    private val localAiClassifier: LocalAiClassifier
+    private val localAiClassifier: LocalAiClassifier,
+    private val authManager: com.ivan.finanzapp.data.remote.SupabaseAuthManager,
+    private val syncManager: com.ivan.finanzapp.data.remote.SupabaseSyncManager
 ) : ViewModel() {
 
     private val _isAddAccountDialogVisible = MutableStateFlow(false)
@@ -37,25 +39,30 @@ class SettingsViewModel @Inject constructor(
     private val _isSavedSuccess = MutableStateFlow(false)
     private val _isLocalAiPrefChanged = MutableStateFlow(false)
     private val _processingModeChanged = MutableStateFlow(false)
+    private val _isSyncing = MutableStateFlow(false)
 
     val uiState: StateFlow<SettingsUiState> = combine(
         accountDao.observeAccounts(),
         customRuleDao.observeAll(),
+        authManager.currentUserFlow,
         _isAddAccountDialogVisible,
         _isProcessingDialogVisible,
         _isCustomRulesDialogVisible,
         _isSavedSuccess,
         _isLocalAiPrefChanged,
-        _processingModeChanged
+        _processingModeChanged,
+        _isSyncing
     ) { flows ->
         @Suppress("UNCHECKED_CAST")
         val accounts = flows[0] as List<AccountEntity>
         @Suppress("UNCHECKED_CAST")
         val customRules = flows[1] as List<CustomRuleEntity>
-        val isAddDialogVisible = flows[2] as Boolean
-        val isProcDialogVisible = flows[3] as Boolean
-        val isCustomRulesVisible = flows[4] as Boolean
-        val isSavedSuccess = flows[5] as Boolean
+        val currentUser = flows[2] as io.github.jan.supabase.auth.user.UserInfo?
+        val isAddDialogVisible = flows[3] as Boolean
+        val isProcDialogVisible = flows[4] as Boolean
+        val isCustomRulesVisible = flows[5] as Boolean
+        val isSavedSuccess = flows[6] as Boolean
+        val isSyncing = flows[9] as Boolean
         val apiKey = securePrefs.getOpenRouterApiKey() ?: ""
         SettingsUiState(
             isLoading = false,
@@ -68,7 +75,9 @@ class SettingsViewModel @Inject constructor(
             isSavedSuccess = isSavedSuccess,
             isLocalAiSupported = localAiClassifier.isLocalAiSupported(),
             isLocalAiEnabled = securePrefs.isLocalAiEnabled(),
-            processingMode = securePrefs.getNotificationProcessingMode()
+            processingMode = securePrefs.getNotificationProcessingMode(),
+            currentUserEmail = currentUser?.email,
+            isSyncing = isSyncing
         )
     }.stateIn(
         scope = viewModelScope,
@@ -170,6 +179,27 @@ class SettingsViewModel @Inject constructor(
     fun deleteAccount(accountId: String) {
         viewModelScope.launch {
             accountDao.delete(accountId)
+        }
+    }
+
+    fun syncNow() {
+        viewModelScope.launch {
+            if (_isSyncing.value) return@launch
+            _isSyncing.value = true
+            syncManager.sync()
+                .onSuccess {
+                    // Sincronización exitosa
+                }
+                .onFailure {
+                    // Opcional: manejar error en UI
+                }
+            _isSyncing.value = false
+        }
+    }
+
+    fun signOut() {
+        viewModelScope.launch {
+            authManager.signOut()
         }
     }
 }

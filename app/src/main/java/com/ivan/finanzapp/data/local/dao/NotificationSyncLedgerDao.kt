@@ -15,6 +15,12 @@ interface NotificationSyncLedgerDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: NotificationSyncLedgerEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: NotificationSyncLedgerEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entries: List<NotificationSyncLedgerEntity>)
+
     @Update
     suspend fun update(entry: NotificationSyncLedgerEntity)
 
@@ -32,4 +38,7 @@ interface NotificationSyncLedgerDao {
 
     @Query("SELECT COUNT(*) FROM notification_sync_ledger WHERE status = :status")
     fun observeCountByStatus(status: NotificationProcessingStatus): Flow<Int>
+
+    @Query("SELECT * FROM notification_sync_ledger")
+    suspend fun getAllSnapshot(): List<NotificationSyncLedgerEntity>
 }

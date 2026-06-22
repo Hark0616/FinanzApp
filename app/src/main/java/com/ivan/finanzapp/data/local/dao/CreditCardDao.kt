@@ -38,4 +38,7 @@ interface CreditCardDao {
 
     @Query("DELETE FROM credit_cards WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("SELECT * FROM credit_cards")
+    suspend fun getAllSnapshot(): List<CreditCardEntity>
 }

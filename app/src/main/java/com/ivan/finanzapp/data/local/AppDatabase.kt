@@ -31,6 +31,8 @@ import com.ivan.finanzapp.data.local.entity.AssetEntity
 import com.ivan.finanzapp.data.local.dao.AssetDao
 import com.ivan.finanzapp.data.local.entity.CustomRuleEntity
 import com.ivan.finanzapp.data.local.dao.CustomRuleDao
+import com.ivan.finanzapp.data.local.entity.SyncDeleteLogEntity
+import com.ivan.finanzapp.data.local.dao.SyncDeleteLogDao
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
@@ -45,9 +47,10 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         DeferredPurchaseEntity::class,
         AssetEntity::class,
         CustomRuleEntity::class,
-        NotificationSyncLedgerEntity::class
+        NotificationSyncLedgerEntity::class,
+        SyncDeleteLogEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -64,6 +67,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun assetDao(): AssetDao
     abstract fun customRuleDao(): CustomRuleDao
     abstract fun notificationSyncLedgerDao(): NotificationSyncLedgerDao
+    abstract fun syncDeleteLogDao(): SyncDeleteLogDao
 
 
     companion object {
@@ -200,6 +204,105 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. Create table
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `sync_delete_log` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `tableName` TEXT NOT NULL,
+                        `recordId` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+
+                // 2. Create triggers
+                val tables = listOf(
+                    "accounts" to "id",
+                    "credit_cards" to "id",
+                    "categories" to "id",
+                    "transactions" to "id",
+                    "loans" to "id",
+                    "loan_payments" to "id",
+                    "deferred_purchases" to "id",
+                    "assets" to "id",
+                    "custom_rules" to "id",
+                    "notification_sync_ledger" to "id"
+                )
+                for ((table, pk) in tables) {
+                    db.execSQL(
+                        """
+                        CREATE TRIGGER IF NOT EXISTS `log_${table}_delete` AFTER DELETE ON `$table`
+                        BEGIN
+                            INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                            VALUES ('$table', OLD.`$pk`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                        END;
+                        """.trimIndent()
+                    )
+                }
+                
+                // For merchant_category_mappings (pk is merchantKey)
+                db.execSQL(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS `log_merchant_category_mappings_delete` AFTER DELETE ON `merchant_category_mappings`
+                    BEGIN
+                        INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                        VALUES ('merchant_category_mappings', OLD.`merchantKey`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                    END;
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val DB_CALLBACK = object : RoomDatabase.Callback() {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                super.onCreate(db)
+                createTriggers(db)
+            }
+
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                createTriggers(db)
+            }
+
+            private fun createTriggers(db: SupportSQLiteDatabase) {
+                val tables = listOf(
+                    "accounts" to "id",
+                    "credit_cards" to "id",
+                    "categories" to "id",
+                    "transactions" to "id",
+                    "loans" to "id",
+                    "loan_payments" to "id",
+                    "deferred_purchases" to "id",
+                    "assets" to "id",
+                    "custom_rules" to "id",
+                    "notification_sync_ledger" to "id"
+                )
+                for ((table, pk) in tables) {
+                    db.execSQL(
+                        """
+                        CREATE TRIGGER IF NOT EXISTS `log_${table}_delete` AFTER DELETE ON `$table`
+                        BEGIN
+                            INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                            VALUES ('$table', OLD.`$pk`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                        END;
+                        """.trimIndent()
+                    )
+                }
+                db.execSQL(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS `log_merchant_category_mappings_delete` AFTER DELETE ON `merchant_category_mappings`
+                    BEGIN
+                        INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                        VALUES ('merchant_category_mappings', OLD.`merchantKey`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                    END;
+                    """.trimIndent()
+                )
+            }
+        }
+
         /**
          * Crea (o retorna) la instancia única de la base de datos, cifrada
          * con SQLCipher usando [passphrase].
@@ -228,8 +331,10 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_9_10,
                     MIGRATION_10_11,
                     MIGRATION_11_12,
-                    MIGRATION_12_13
+                    MIGRATION_12_13,
+                    MIGRATION_13_14
                 )
+                .addCallback(DB_CALLBACK)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
         }
