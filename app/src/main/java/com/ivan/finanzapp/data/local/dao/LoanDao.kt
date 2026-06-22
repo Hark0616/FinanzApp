@@ -23,6 +23,9 @@ interface LoanDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(loan: LoanEntity)
 
+    @Query("SELECT * FROM loans")
+    suspend fun getAllLoansSnapshot(): List<LoanEntity>
+
     @Update
     suspend fun update(loan: LoanEntity)
 

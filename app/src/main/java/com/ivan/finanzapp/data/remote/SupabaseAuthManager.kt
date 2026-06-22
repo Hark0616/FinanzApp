@@ -2,7 +2,8 @@ package com.ivan.finanzapp.data.remote
 
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
-import io.github.jan.supabase.auth.providers.Email
+import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.auth.user.UserInfo
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -19,8 +20,12 @@ class SupabaseAuthManager @Inject constructor(
      * Emite el usuario logueado actualmente.
      * Emite null si no hay ninguna sesión activa.
      */
-    val currentUserFlow: Flow<UserInfo?> = authModule.sessionFlow.map { session ->
-        session?.user
+    val currentUserFlow: Flow<UserInfo?> = authModule.sessionStatus.map { status ->
+        if (status is SessionStatus.Authenticated) {
+            status.session.user
+        } else {
+            null
+        }
     }
 
     /**
