@@ -3,7 +3,7 @@ package com.ivan.finanzapp.ui.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ivan.finanzapp.data.remote.SupabaseAuthManager
-import dagger.hilt.lifecycle.HiltViewModel
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
