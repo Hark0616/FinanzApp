@@ -24,4 +24,20 @@
             android:targetClass="com.ivan.finanzapp.MainActivity"
             android:data="finanzapp://transactions?action=view_unclassified" />
     </shortcut>
+
+    <!-- Capacidad de App Actions para registro por voz con Google Assistant / Gemini -->
+    <capability android:name="custom.actions.intent.CREATE_EXPENSE">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.ivan.finanzapp"
+            android:targetClass="com.ivan.finanzapp.ui.quickadd.QuickAddActivity">
+            <url-template android:value="finanzapp://quickadd?amount={amount}&amp;merchant={merchant}&amp;voice=true" />
+            <parameter
+                android:name="amount"
+                android:key="amount" />
+            <parameter
+                android:name="merchant"
+                android:key="merchant" />
+        </intent>
+    </capability>
 </shortcuts>

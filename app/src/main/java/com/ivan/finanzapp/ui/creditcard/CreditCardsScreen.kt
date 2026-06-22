@@ -253,7 +253,7 @@ private fun PhysicalLikeCreditCard(
 
             // Número ficticio
             Text(
-                "••••  ••••  ••••  ${summary.card.id.takeLast(4).ifBlank { "8888" }}",
+                "••••  ••••  ••••  ${summary.account.lastFourDigits ?: summary.card.id.takeLast(4).ifBlank { "8888" }}",
                 color = Color.White.copy(alpha = 0.85f),
                 fontSize = 20.sp,
                 letterSpacing = 2.sp,
@@ -405,7 +405,7 @@ private fun CreditCardDetailView(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "••••  ••••  ••••  ${summary.card.id.takeLast(4).ifBlank { "8888" }}",
+                    text = "••••  ••••  ••••  ${summary.account.lastFourDigits ?: summary.card.id.takeLast(4).ifBlank { "8888" }}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )

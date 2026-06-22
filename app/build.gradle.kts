@@ -102,6 +102,10 @@ dependencies {
     // Seguridad (EncryptedSharedPreferences para guardar API key)
     implementation("androidx.security:security-crypto:1.1.0")
 
+    // Glance (Widgets en Jetpack Compose)
+    implementation("androidx.glance:glance-appwidget:1.1.0")
+    implementation("androidx.glance:glance-material3:1.1.0")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

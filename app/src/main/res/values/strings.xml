@@ -31,5 +31,9 @@
     <string name="shortcut_add_long_label">Registrar nuevo gasto manualmente</string>
     <string name="shortcut_unclassified_label">Clasificar Cuenta</string>
     <string name="shortcut_unclassified_long_label">Ver movimientos pendientes de clasificar cuenta</string>
+
+    <!-- Widgets -->
+    <string name="widget_title">Balance Ejecutivo</string>
+    <string name="widget_description">Muestra el saldo disponible consolidado de tus cuentas y deudas de tarjetas de crédito.</string>
 </resources>
 

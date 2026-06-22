@@ -48,6 +48,32 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- Dialog flotante premium para registro rápido -->
+        <activity
+            android:name=".ui.quickadd.QuickAddActivity"
+            android:exported="true"
+            android:theme="@style/Theme.QuickAdd">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="finanzapp" android:host="quickadd" />
+            </intent-filter>
+        </activity>
+
+        <!-- Servicio de Quick Settings Tile -->
+        <service
+            android:name=".ui.quickadd.QuickAddTileService"
+            android:exported="true"
+            android:label="Registrar Gasto"
+            android:icon="@drawable/ic_shortcut_add"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+
 
         <!-- Servicio que escucha las notificaciones del sistema -->
         <service
@@ -67,6 +93,28 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
+        </receiver>
+
+        <!-- Receiver para simular notificaciones bancarias en pruebas locales -->
+        <receiver
+            android:name=".data.notification.NotificationSimulatorReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.ivan.finanzapp.SIMULATE_NOTIFICATION" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Receiver para el Widget de Glance -->
+        <receiver
+            android:name=".ui.widget.FinanzAppWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/app_widget_info" />
         </receiver>
 
     </application>

@@ -27,6 +27,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.util.UUID
+import android.content.Context
+import androidx.glance.appwidget.updateAll
+import com.ivan.finanzapp.ui.widget.FinanzAppWidget
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,6 +53,7 @@ private const val SOURCE_CLOUD_AI = "CLOUD_AI"
  */
 @Singleton
 class TransactionProcessor @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val database: AppDatabase,
     private val parserDispatcher: ParserDispatcher,
     private val aiClassifier: TransactionAiClassifier,
@@ -94,6 +99,12 @@ class TransactionProcessor @Inject constructor(
                 notificationSyncLedgerDao.insert(ledgerEntry)
                 ledgerPersisted = true
                 process(ledgerEntry)
+                
+                try {
+                    FinanzAppWidget().updateAll(context)
+                } catch (widgetError: Throwable) {
+                    widgetError.printStackTrace()
+                }
             } catch (error: Throwable) {
                 if (ledgerPersisted) {
                     notificationSyncLedgerDao.update(
@@ -109,28 +120,11 @@ class TransactionProcessor @Inject constructor(
     }
 
     private suspend fun process(ledgerEntry: NotificationSyncLedgerEntity) {
-        if (!parserDispatcher.isSupportedPackage(ledgerEntry.packageName)) {
-            notificationSyncLedgerDao.update(
-                ledgerEntry.withStatus(
-                    status = NotificationProcessingStatus.IGNORED,
-                    reason = "unsupported_package"
-                )
-            )
-            return
-        }
-
-        if (ledgerEntry.text.isBlank()) {
-            notificationSyncLedgerDao.update(
-                ledgerEntry.withStatus(
-                    status = NotificationProcessingStatus.IGNORED,
-                    reason = "blank_notification_text"
-                )
-            )
-            return
-        }
+        android.util.Log.d("TransactionProcessor", "Processing notification: package=${ledgerEntry.packageName}, title='${ledgerEntry.title}', text='${ledgerEntry.text}'")
 
         val parsedResult = parseNotification(ledgerEntry)
         if (parsedResult == null) {
+            android.util.Log.d("TransactionProcessor", "Processing ignored: no_transaction_detected")
             notificationSyncLedgerDao.update(
                 ledgerEntry.withStatus(
                     status = NotificationProcessingStatus.IGNORED,
@@ -141,6 +135,8 @@ class TransactionProcessor @Inject constructor(
         }
 
         val transaction = parsedResult.transaction
+        android.util.Log.d("TransactionProcessor", "Parsed successfully: type=${transaction.type}, amount=${transaction.amount}, merchant='${transaction.merchant}', source=${transaction.source}, classifierSource=${parsedResult.classifierSource}")
+        
         val fullMessage = "${ledgerEntry.title} ${ledgerEntry.text}"
 
         database.withTransaction {
@@ -274,19 +270,38 @@ class TransactionProcessor @Inject constructor(
     private suspend fun parseWithCustomRules(title: String, text: String): ParsedTransaction? {
         val customRules = customRuleDao.getAll()
         val fullMessage = "$title $text"
+        android.util.Log.d("TransactionProcessor", "Evaluating custom rules. Count: ${customRules.size}")
 
         for (rule in customRules) {
+            android.util.Log.d("TransactionProcessor", "Evaluating rule '${rule.name}': pattern='${rule.regexPattern}'")
             val regex = runCatching { Regex(rule.regexPattern, RegexOption.IGNORE_CASE) }
-                .getOrNull() ?: continue
-            val matchResult = regex.find(fullMessage) ?: continue
-            val amountGroup = matchResult.groups["amount"] ?: continue
+                .getOrNull()
+            if (regex == null) {
+                android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' has invalid regex pattern")
+                continue
+            }
+            val matchResult = regex.find(fullMessage)
+            if (matchResult == null) {
+                android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' pattern did not match message")
+                continue
+            }
+            val amountGroup = matchResult.groups["amount"]
+            if (amountGroup == null) {
+                android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' matched, but group 'amount' was not captured")
+                continue
+            }
+            android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' matched! Captured amount: '${amountGroup.value}'")
 
             val amount = when (rule.amountFormatType) {
                 0 -> parseLatAmAmount(amountGroup.value)
                 1 -> parseUSAmount(amountGroup.value)
                 2 -> parsePlainAmount(amountGroup.value)
                 else -> ParserUtils.parseAmount(amountGroup.value)
-            } ?: continue
+            }
+            if (amount == null) {
+                android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' failed to parse amount '${amountGroup.value}' using format type ${rule.amountFormatType}")
+                continue
+            }
 
             val txType = runCatching { TransactionType.valueOf(rule.transactionType) }
                 .getOrDefault(TransactionType.GASTO)
