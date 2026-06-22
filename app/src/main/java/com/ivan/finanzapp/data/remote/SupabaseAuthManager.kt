@@ -37,13 +37,13 @@ class SupabaseAuthManager @Inject constructor(
     /**
      * Registra un nuevo usuario con correo y contraseña.
      */
-    suspend fun signUp(email: String, password: String): Result<UserInfo> {
+    suspend fun signUp(email: String, password: String): Result<Unit> {
         return try {
-            val user = authModule.signUpWith(Email) {
+            authModule.signUpWith(Email) {
                 this.email = email
                 this.password = password
             }
-            Result.success(user)
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -52,14 +52,13 @@ class SupabaseAuthManager @Inject constructor(
     /**
      * Inicia sesión con correo y contraseña.
      */
-    suspend fun signIn(email: String, password: String): Result<UserInfo> {
+    suspend fun signIn(email: String, password: String): Result<Unit> {
         return try {
-            val session = authModule.signInWith(Email) {
+            authModule.signInWith(Email) {
                 this.email = email
                 this.password = password
             }
-            val user = session.user ?: throw Exception("Sesión iniciada pero usuario no disponible.")
-            Result.success(user)
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
