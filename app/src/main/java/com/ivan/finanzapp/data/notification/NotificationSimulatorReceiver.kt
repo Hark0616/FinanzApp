@@ -19,7 +19,7 @@ class NotificationSimulatorReceiver : BroadcastReceiver() {
             val title = intent.getStringExtra("title") ?: ""
             val text = intent.getStringExtra("text") ?: ""
 
-            Log.d("NotificationSimulator", "Simulating notification: package=$packageName, title='$title', text='$text'")
+            Log.d("NotificationSimulator", "Simulating notification: package=$packageName, textLength=${text.length}")
             transactionProcessor.processAsync(
                 packageName = packageName,
                 title = title,

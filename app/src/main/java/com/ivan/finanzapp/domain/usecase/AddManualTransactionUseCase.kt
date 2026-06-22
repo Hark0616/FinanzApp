@@ -1,6 +1,7 @@
 package com.ivan.finanzapp.domain.usecase
 
 import com.ivan.finanzapp.data.local.dao.AccountDao
+import com.ivan.finanzapp.data.local.AppDatabase
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
@@ -10,15 +11,16 @@ import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.model.TransactionType
 import android.content.Context
+import androidx.room.withTransaction
 import androidx.glance.appwidget.updateAll
 import com.ivan.finanzapp.ui.widget.FinanzAppWidget
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.first
 import java.util.UUID
 import javax.inject.Inject
 
 class AddManualTransactionUseCase @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
+    private val database: AppDatabase,
     private val transactionDao: TransactionDao,
     private val accountDao: AccountDao,
     private val creditCardDao: CreditCardDao,
@@ -35,72 +37,41 @@ class AddManualTransactionUseCase @Inject constructor(
         val id = UUID.randomUUID().toString()
         val timestamp = System.currentTimeMillis()
 
-        // 1. Determinar el tipo de transacción correcto según el tipo de cuenta
-        val type = if (accountId != null) {
-            val account = accountDao.getAccountById(accountId)
-            if (account?.type == AccountType.TARJETA_CREDITO) {
-                if (typeStr == "Ingreso") TransactionType.PAGO_TC else TransactionType.GASTO_TC
-            } else {
-                if (typeStr == "Ingreso") TransactionType.INGRESO else TransactionType.GASTO
+        database.withTransaction {
+            val account = accountId?.let { accountDao.getAccountById(it) }
+            val resolvedAccountId = account?.id
+            val type = when {
+                account?.type == AccountType.TARJETA_CREDITO ->
+                    if (typeStr == "Ingreso") TransactionType.PAGO_TC else TransactionType.GASTO_TC
+                typeStr == "Ingreso" -> TransactionType.INGRESO
+                else -> TransactionType.GASTO
             }
-        } else {
-            if (typeStr == "Ingreso") TransactionType.INGRESO else TransactionType.GASTO
-        }
 
-        val entity = TransactionEntity(
-            id = id,
-            accountId = accountId,
-            amount = amount,
-            type = type,
-            merchant = merchant,
-            categoryId = categoryId,
-            rawNotification = "[Manual] Ingreso manual",
-            timestamp = timestamp,
-            confirmedByAI = false,
-            needsReview = false
-        )
+            val entity = TransactionEntity(
+                id = id,
+                accountId = resolvedAccountId,
+                amount = amount,
+                type = type,
+                merchant = merchant,
+                categoryId = categoryId,
+                rawNotification = "[Manual] $typeStr manual: $merchant",
+                timestamp = timestamp,
+                confirmedByAI = false,
+                needsReview = false
+            )
 
-        val inserted = transactionDao.insertIfNotExists(entity)
-        if (inserted == 0L) return
-
-        // 2. Aplicar el impacto financiero de inmediato
-        if (accountId != null) {
-            val account = accountDao.getAccountById(accountId)
-            if (account != null) {
-                if (account.type == AccountType.TARJETA_CREDITO) {
-                    val card = creditCardDao.getByAccountId(accountId)
-                    if (card != null) {
-                        if (type == TransactionType.GASTO_TC) {
-                            val purchase = DeferredPurchaseEntity(
-                                id = id,
-                                creditCardId = card.id,
-                                description = merchant,
-                                totalAmount = amount,
-                                totalInstallments = 1,
-                                paidInstallments = 0,
-                                purchaseDate = timestamp
-                            )
-                            deferredPurchaseDao.upsert(purchase)
-                            recalculateCardDebt(card.id)
-                        } else if (type == TransactionType.PAGO_TC) {
-                            val purchases = deferredPurchaseDao.observeByCardId(card.id).first()
-                            val result = calculator.distributePayment(amount, purchases)
-                            for (updated in result.updatedPurchases) {
-                                deferredPurchaseDao.upsert(updated)
-                            }
-                            for (deletedId in result.deletedPurchaseIds) {
-                                deferredPurchaseDao.delete(deletedId)
-                            }
-                            recalculateCardDebt(card.id)
-                        }
-                    }
-                } else {
-                    // Cuenta normal
-                    if (type == TransactionType.INGRESO) {
-                        accountDao.adjustBalance(accountId, +amount)
-                    } else {
-                        accountDao.adjustBalance(accountId, -amount)
-                    }
+            val inserted = transactionDao.insertIfNotExists(entity)
+            if (inserted != 0L) {
+                account?.let { accountForSideEffects ->
+                    applyFinancialSideEffects(
+                        transactionId = id,
+                        accountId = accountForSideEffects.id,
+                        accountType = accountForSideEffects.type,
+                        amount = amount,
+                        merchant = merchant,
+                        type = type,
+                        timestamp = timestamp
+                    )
                 }
             }
         }
@@ -112,9 +83,52 @@ class AddManualTransactionUseCase @Inject constructor(
         }
     }
 
+    private suspend fun applyFinancialSideEffects(
+        transactionId: String,
+        accountId: String,
+        accountType: AccountType,
+        amount: Double,
+        merchant: String,
+        type: TransactionType,
+        timestamp: Long
+    ) {
+        if (accountType == AccountType.TARJETA_CREDITO) {
+            val card = creditCardDao.getByAccountId(accountId) ?: return
+            if (type == TransactionType.GASTO_TC) {
+                val purchase = DeferredPurchaseEntity(
+                    id = transactionId,
+                    creditCardId = card.id,
+                    description = merchant,
+                    totalAmount = amount,
+                    totalInstallments = 1,
+                    paidInstallments = 0,
+                    purchaseDate = timestamp
+                )
+                deferredPurchaseDao.upsert(purchase)
+                recalculateCardDebt(card.id)
+            } else if (type == TransactionType.PAGO_TC) {
+                val purchases = deferredPurchaseDao.getByCardIdSnapshot(card.id)
+                val result = calculator.distributePayment(amount, purchases)
+                for (updated in result.updatedPurchases) {
+                    deferredPurchaseDao.upsert(updated)
+                }
+                for (deletedId in result.deletedPurchaseIds) {
+                    deferredPurchaseDao.delete(deletedId)
+                }
+                recalculateCardDebt(card.id)
+            }
+        } else {
+            if (type == TransactionType.INGRESO) {
+                accountDao.adjustBalance(accountId, +amount)
+            } else {
+                accountDao.adjustBalance(accountId, -amount)
+            }
+        }
+    }
+
     private suspend fun recalculateCardDebt(cardId: String) {
-        val purchases = deferredPurchaseDao.observeByCardId(cardId).first()
-        val card = creditCardDao.observeAll().first().find { it.id == cardId } ?: return
+        val purchases = deferredPurchaseDao.getByCardIdSnapshot(cardId)
+        val card = creditCardDao.getById(cardId) ?: return
         val newDebt = calculator.totalDeferredDebt(purchases)
         val updatedCard = card.copy(currentDebt = newDebt)
         creditCardDao.update(updatedCard)

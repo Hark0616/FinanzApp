@@ -1231,7 +1231,7 @@ private fun escapeRegex(text: String): String {
     return text.replace(Regex("""[\\^$.|?*+()\[\]{}]""")) { "\\${it.value}" }
 }
 
-private fun generateRegexFromTokens(
+internal fun generateRegexFromTokens(
     tokens: List<String>,
     amountIndices: Set<Int>,
     merchantIndices: Set<Int>
@@ -1239,6 +1239,8 @@ private fun generateRegexFromTokens(
     val builder = StringBuilder()
     var i = 0
     val n = tokens.size
+    var amountCaptured = false
+    var merchantCaptured = false
 
     while (i < n) {
         if (i > 0) {
@@ -1251,7 +1253,12 @@ private fun generateRegexFromTokens(
                 while (end + 1 < n && (end + 1) in amountIndices) {
                     end++
                 }
-                builder.append("""(?<amount>[\$]?[\d.,]+)""")
+                if (amountCaptured) {
+                    builder.append("""[\$]?[\d.,]+""")
+                } else {
+                    builder.append("""(?<amount>[\$]?[\d.,]+)""")
+                    amountCaptured = true
+                }
                 i = end
             }
             i in merchantIndices -> {
@@ -1259,7 +1266,12 @@ private fun generateRegexFromTokens(
                 while (end + 1 < n && (end + 1) in merchantIndices) {
                     end++
                 }
-                builder.append("""(?<merchant>[A-Za-z0-9 .*\-_]+)""")
+                if (merchantCaptured) {
+                    builder.append("""[A-Za-z0-9 .*\-_]+""")
+                } else {
+                    builder.append("""(?<merchant>[A-Za-z0-9 .*\-_]+)""")
+                    merchantCaptured = true
+                }
                 i = end
             }
             else -> {

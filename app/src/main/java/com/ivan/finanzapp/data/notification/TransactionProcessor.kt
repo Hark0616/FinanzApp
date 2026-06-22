@@ -53,7 +53,7 @@ private const val SOURCE_CLOUD_AI = "CLOUD_AI"
  */
 @Singleton
 class TransactionProcessor @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val database: AppDatabase,
     private val parserDispatcher: ParserDispatcher,
     private val aiClassifier: TransactionAiClassifier,
@@ -83,6 +83,10 @@ class TransactionProcessor @Inject constructor(
         postedAtMillis: Long = System.currentTimeMillis()
     ) {
         processorScope.launch {
+            if (!parserDispatcher.isSupportedPackage(packageName)) {
+                return@launch
+            }
+
             val receivedAtMillis = System.currentTimeMillis()
             val ledgerEntry = NotificationSyncLedgerEntity(
                 id = UUID.randomUUID().toString(),
@@ -120,7 +124,21 @@ class TransactionProcessor @Inject constructor(
     }
 
     private suspend fun process(ledgerEntry: NotificationSyncLedgerEntity) {
-        android.util.Log.d("TransactionProcessor", "Processing notification: package=${ledgerEntry.packageName}, title='${ledgerEntry.title}', text='${ledgerEntry.text}'")
+        android.util.Log.d(
+            "TransactionProcessor",
+            "Processing notification: package=${ledgerEntry.packageName}, textLength=${ledgerEntry.text.length}"
+        )
+
+        if (ledgerEntry.title.isBlank() && ledgerEntry.text.isBlank()) {
+            android.util.Log.d("TransactionProcessor", "Processing ignored: empty_notification")
+            notificationSyncLedgerDao.update(
+                ledgerEntry.withStatus(
+                    status = NotificationProcessingStatus.IGNORED,
+                    reason = "empty_notification"
+                )
+            )
+            return
+        }
 
         val parsedResult = parseNotification(ledgerEntry)
         if (parsedResult == null) {
@@ -273,9 +291,8 @@ class TransactionProcessor @Inject constructor(
         android.util.Log.d("TransactionProcessor", "Evaluating custom rules. Count: ${customRules.size}")
 
         for (rule in customRules) {
-            android.util.Log.d("TransactionProcessor", "Evaluating rule '${rule.name}': pattern='${rule.regexPattern}'")
-            val regex = runCatching { Regex(rule.regexPattern, RegexOption.IGNORE_CASE) }
-                .getOrNull()
+            android.util.Log.d("TransactionProcessor", "Evaluating rule '${rule.name}'")
+            val regex = compileCustomRuleRegex(rule.regexPattern)
             if (regex == null) {
                 android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' has invalid regex pattern")
                 continue
@@ -290,7 +307,7 @@ class TransactionProcessor @Inject constructor(
                 android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' matched, but group 'amount' was not captured")
                 continue
             }
-            android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' matched! Captured amount: '${amountGroup.value}'")
+            android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' matched")
 
             val amount = when (rule.amountFormatType) {
                 0 -> parseLatAmAmount(amountGroup.value)
@@ -320,6 +337,27 @@ class TransactionProcessor @Inject constructor(
         }
 
         return null
+    }
+
+    private fun compileCustomRuleRegex(pattern: String): Regex? =
+        runCatching {
+            Regex(deduplicateNamedCaptureGroups(pattern), RegexOption.IGNORE_CASE)
+        }.getOrNull()
+
+    private fun deduplicateNamedCaptureGroups(pattern: String): String {
+        var normalized = pattern
+        for (groupName in listOf("amount", "merchant")) {
+            var seen = false
+            normalized = Regex("""\(\?<$groupName>""").replace(normalized) {
+                if (seen) {
+                    "(?:"
+                } else {
+                    seen = true
+                    it.value
+                }
+            }
+        }
+        return normalized
     }
 
     private suspend fun applyFinancialSideEffects(

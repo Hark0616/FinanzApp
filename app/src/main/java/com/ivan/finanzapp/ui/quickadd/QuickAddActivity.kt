@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ivan.finanzapp.data.local.entity.AccountEntity
+import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.theme.FinanzAppTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -86,7 +88,7 @@ fun QuickAddScreen(
     // Pre-seleccionar cuenta por defecto cuando se carguen
     LaunchedEffect(accounts) {
         if (selectedAccountId == null && accounts.isNotEmpty()) {
-            selectedAccountId = accounts.firstOrNull()?.id
+            selectedAccountId = accounts.preferredManualDefaultAccountId()
         }
     }
 
@@ -111,7 +113,7 @@ fun QuickAddScreen(
                     kotlinx.coroutines.delay(100)
                 }
                 
-                val defaultAccountId = accounts.firstOrNull()?.id
+                val defaultAccountId = accounts.preferredManualDefaultAccountId()
                 val defaultCategoryId = categories.find { it.isDefault }?.id ?: categories.firstOrNull()?.id
                 android.util.Log.d("QuickAddScreen", "Saving voice transaction. AccountId: $defaultAccountId, CategoryId: $defaultCategoryId")
                 
@@ -434,3 +436,6 @@ fun QuickAddScreen(
         }
     }
 }
+
+private fun List<AccountEntity>.preferredManualDefaultAccountId(): String? =
+    firstOrNull { it.type != AccountType.TARJETA_CREDITO }?.id ?: firstOrNull()?.id
