@@ -48,6 +48,8 @@ data class LoanPaymentEntity(
     val interestPaidAmount: Double,
     val unpaidInterestAmount: Double,
     val principalAmount: Double,
+    val extraPrincipalAmount: Double = 0.0,
+    val unappliedPaymentAmount: Double = 0.0,
     val remainingAmountBefore: Double,
     val remainingAmountAfter: Double,
     val paymentDate: Long,

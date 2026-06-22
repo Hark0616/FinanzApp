@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
+import com.ivan.finanzapp.domain.model.LoanAmortizationType
 import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import com.ivan.finanzapp.ui.components.SectionTitle
 import com.ivan.finanzapp.ui.components.formatCOP
@@ -113,12 +114,13 @@ fun LoansScreen(
             AddLoanDialog(
                 accounts = state.accounts,
                 onDismiss = { viewModel.toggleAddDialog(false) },
-                onConfirm = { name, total, interest, interestType, installments, cuota, insurance, fee, day, accountId ->
+                onConfirm = { name, total, interest, interestType, amortizationType, installments, cuota, insurance, fee, day, accountId ->
                     viewModel.addLoan(
                         name = name,
                         totalAmount = total,
                         interestRate = interest,
                         interestRateType = interestType,
+                        amortizationType = amortizationType,
                         totalInstallments = installments,
                         monthlyInstallment = cuota,
                         monthlyInsurance = insurance,
@@ -132,25 +134,112 @@ fun LoansScreen(
 
         // Diálogo de Confirmación de Pago
         selectedLoanForPayment?.let { loan ->
+            val scheduledPayment = estimatedScheduledPaymentAmount(loan)
+            val maximumApplicablePayment = estimatedMaximumApplicablePayment(loan)
+            val defaultPayment = scheduledPayment.coerceAtMost(maximumApplicablePayment)
+            var paymentAmount by remember(loan.id, defaultPayment) {
+                mutableStateOf(formatAmountInput(defaultPayment))
+            }
+            val parsedPaymentAmount = paymentAmount.toDoubleOrNull()
+            val exceedsApplicablePayment = parsedPaymentAmount != null &&
+                    parsedPaymentAmount > maximumApplicablePayment
+            val canConfirmPayment = parsedPaymentAmount != null &&
+                    parsedPaymentAmount > 0.0 &&
+                    !exceedsApplicablePayment
+            val extraPayment = ((parsedPaymentAmount ?: 0.0) - defaultPayment).coerceAtLeast(0.0)
+            val partialPayment = parsedPaymentAmount != null &&
+                    parsedPaymentAmount > 0.0 &&
+                    parsedPaymentAmount < defaultPayment
+
             AlertDialog(
                 onDismissRequest = { selectedLoanForPayment = null },
-                title = { Text("Confirmar Pago de Cuota") },
+                title = { Text("Registrar pago") },
                 text = {
-                    Text(
-                        "¿Confirmas el pago de la cuota de ${formatCOP(loan.monthlyInstallmentAmount)} " +
-                                "para el crédito \"${loan.name}\"? Esto registrará un movimiento de gasto y " +
-                                "aplicará primero el interés estimado; el excedente reducirá el saldo de capital." +
-                                if (loan.linkedAccountId != null) "\n\nSe debitará automáticamente del saldo de la cuenta vinculada." else ""
-                    )
+                    Column {
+                        Text(
+                            loan.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Cuota programada: ${formatCOP(scheduledPayment)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                        if (defaultPayment < scheduledPayment) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Pago para cerrar: ${formatCOP(defaultPayment)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TrafficGreen,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = paymentAmount,
+                            onValueChange = { paymentAmount = it },
+                            label = { Text("Monto pagado ($)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        if (extraPayment > 0.0) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Extra a capital estimado: ${formatCOP(extraPayment)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TrafficGreen,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (exceedsApplicablePayment) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "El máximo aplicable a este crédito es ${formatCOP(maximumApplicablePayment)}.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TrafficRed,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (partialPayment) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Pago parcial: puede dejar cargos o interés sin cubrir.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TrafficYellow,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Se aplica en orden: seguros/cargos, interés, capital y luego capital extra.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                        if (loan.linkedAccountId != null) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Se debitará automáticamente de la cuenta vinculada.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+                        }
+                    }
                 },
                 confirmButton = {
                     Button(
+                        enabled = canConfirmPayment,
                         onClick = {
-                            viewModel.payInstallment(loan)
+                            viewModel.payInstallment(
+                                loan = loan,
+                                actualPaymentAmount = parsedPaymentAmount
+                            )
                             selectedLoanForPayment = null
                         }
                     ) {
-                        Text("Confirmar")
+                        Text("Registrar")
                     }
                 },
                 dismissButton = {
@@ -351,9 +440,17 @@ private fun LoanCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("Cuota Mensual", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
                     Text(
-                        formatCOP(loan.monthlyInstallmentAmount),
+                        if (loan.amortizationType == LoanAmortizationType.FIXED_PRINCIPAL) {
+                            "Próx. cuota est."
+                        } else {
+                            "Cuota Mensual"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.Gray
+                    )
+                    Text(
+                        formatCOP(estimatedScheduledPaymentAmount(loan)),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -389,6 +486,14 @@ private fun LoanCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray
             )
+            if (loan.amortizationType == LoanAmortizationType.FIXED_PRINCIPAL) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Capital mensual pactado: ${formatCOP(loan.fixedPrincipalAmount)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
 
             val monthlyFixedCharges = loan.monthlyInsuranceAmount + loan.monthlyFeeAmount
             if (monthlyFixedCharges > 0.0) {
@@ -476,6 +581,15 @@ private fun LastLoanPaymentSummary(payment: LoanPaymentEntity) {
             style = MaterialTheme.typography.bodySmall,
             color = Color.Gray
         )
+        if (payment.extraPrincipalAmount > 0.0) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "Capital extra: ${formatCOP(payment.extraPrincipalAmount)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = TrafficGreen,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
         val fixedChargesPaid = payment.insurancePaidAmount + payment.feePaidAmount
         if (fixedChargesPaid > 0.0) {
             Spacer(Modifier.height(2.dp))
@@ -504,6 +618,15 @@ private fun LastLoanPaymentSummary(payment: LoanPaymentEntity) {
                 fontWeight = FontWeight.SemiBold
             )
         }
+        if (payment.unappliedPaymentAmount > 0.0) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Pago no aplicado: ${formatCOP(payment.unappliedPaymentAmount)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = TrafficRed,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }
 
@@ -517,6 +640,7 @@ private fun AddLoanDialog(
         totalAmount: Double,
         interestRate: Double,
         interestRateType: LoanInterestRateType,
+        amortizationType: LoanAmortizationType,
         totalInstallments: Int,
         monthlyInstallment: Double,
         monthlyInsurance: Double,
@@ -530,6 +654,8 @@ private fun AddLoanDialog(
     var interestRate by remember { mutableStateOf("") }
     var interestRateType by remember { mutableStateOf(LoanInterestRateType.MONTHLY_EFFECTIVE) }
     var interestRateTypeExpanded by remember { mutableStateOf(false) }
+    var amortizationType by remember { mutableStateOf(LoanAmortizationType.FIXED_INSTALLMENT) }
+    var amortizationTypeExpanded by remember { mutableStateOf(false) }
     var totalInstallments by remember { mutableStateOf("") }
     var monthlyInstallment by remember { mutableStateOf("") }
     var monthlyInsurance by remember { mutableStateOf("") }
@@ -548,9 +674,21 @@ private fun AddLoanDialog(
     val normalizedMonthlyInsurance = parsedMonthlyInsurance ?: 0.0
     val normalizedMonthlyFee = parsedMonthlyFee ?: 0.0
     val parsedPaymentDay = paymentDay.toIntOrNull()
-    val firstMonthInterest = if (parsedTotalAmount != null && parsedInterestRate != null) {
-        val monthlyRate = normalizeMonthlyInterestRateForPreview(parsedInterestRate, interestRateType)
-        parsedTotalAmount * monthlyRate / 100.0
+    val calculatedFixedPrincipal = if (
+        parsedTotalAmount != null &&
+        parsedInstallments != null &&
+        parsedInstallments > 0
+    ) {
+        parsedTotalAmount / parsedInstallments
+    } else {
+        null
+    }
+    val normalizedMonthlyRate = normalizeMonthlyInterestRateForPreview(
+        parsedInterestRate ?: 0.0,
+        interestRateType
+    )
+    val firstMonthInterest = if (parsedTotalAmount != null) {
+        parsedTotalAmount * normalizedMonthlyRate / 100.0
     } else {
         null
     }
@@ -565,10 +703,30 @@ private fun AddLoanDialog(
     } else {
         null
     }
+    val estimatedFirstFixedPrincipalPayment = if (
+        amortizationType == LoanAmortizationType.FIXED_PRINCIPAL &&
+        calculatedFixedPrincipal != null &&
+        parsedTotalAmount != null &&
+        firstMonthInterest != null
+    ) {
+        normalizedMonthlyInsurance +
+                normalizedMonthlyFee +
+                firstMonthInterest +
+                calculatedFixedPrincipal.coerceAtMost(parsedTotalAmount)
+    } else {
+        null
+    }
+    val hasValidAmortizationAmount = when (amortizationType) {
+        LoanAmortizationType.FIXED_INSTALLMENT ->
+            parsedMonthlyInstallment != null && parsedMonthlyInstallment > 0.0
+
+        LoanAmortizationType.FIXED_PRINCIPAL ->
+            calculatedFixedPrincipal != null && calculatedFixedPrincipal > 0.0
+    }
     val canSave = name.isNotBlank() &&
             parsedTotalAmount != null && parsedTotalAmount > 0.0 &&
             parsedInstallments != null && parsedInstallments > 0 &&
-            parsedMonthlyInstallment != null && parsedMonthlyInstallment > 0.0 &&
+            hasValidAmortizationAmount &&
             (monthlyInsurance.isBlank() || (parsedMonthlyInsurance != null && parsedMonthlyInsurance >= 0.0)) &&
             (monthlyFee.isBlank() || (parsedMonthlyFee != null && parsedMonthlyFee >= 0.0)) &&
             parsedPaymentDay != null && parsedPaymentDay in 1..31
@@ -649,6 +807,41 @@ private fun AddLoanDialog(
                 }
 
                 item {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = amortizationType.displayName,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Método de amortización") },
+                            trailingIcon = {
+                                IconButton(onClick = { amortizationTypeExpanded = true }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { amortizationTypeExpanded = true }
+                        )
+
+                        DropdownMenu(
+                            expanded = amortizationTypeExpanded,
+                            onDismissRequest = { amortizationTypeExpanded = false },
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            LoanAmortizationType.entries.forEach { type ->
+                                DropdownMenuItem(
+                                    text = { Text(type.displayName) },
+                                    onClick = {
+                                        amortizationType = type
+                                        amortizationTypeExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
                     OutlinedTextField(
                         value = totalInstallments,
                         onValueChange = { totalInstallments = it },
@@ -659,15 +852,42 @@ private fun AddLoanDialog(
                     )
                 }
 
-                item {
-                    OutlinedTextField(
-                        value = monthlyInstallment,
-                        onValueChange = { monthlyInstallment = it },
-                        label = { Text("Cuota mensual pactada ($)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
+                when (amortizationType) {
+                    LoanAmortizationType.FIXED_INSTALLMENT -> {
+                        item {
+                            OutlinedTextField(
+                                value = monthlyInstallment,
+                                onValueChange = { monthlyInstallment = it },
+                                label = { Text("Cuota mensual pactada ($)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                        }
+                    }
+
+                    LoanAmortizationType.FIXED_PRINCIPAL -> {
+                        calculatedFixedPrincipal?.let { principal ->
+                            item {
+                                Text(
+                                    "Capital mensual calculado: ${formatCOP(principal)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.Gray,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                        estimatedFirstFixedPrincipalPayment?.let { estimate ->
+                            item {
+                                Text(
+                                    "Primera cuota estimada: ${formatCOP(estimate)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.Gray,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
                 }
 
                 item {
@@ -764,7 +984,10 @@ private fun AddLoanDialog(
                     val total = parsedTotalAmount ?: return@Button
                     val interest = parsedInterestRate ?: 0.0
                     val installments = parsedInstallments ?: return@Button
-                    val cuota = parsedMonthlyInstallment ?: return@Button
+                    val cuota = when (amortizationType) {
+                        LoanAmortizationType.FIXED_INSTALLMENT -> parsedMonthlyInstallment ?: return@Button
+                        LoanAmortizationType.FIXED_PRINCIPAL -> estimatedFirstFixedPrincipalPayment ?: return@Button
+                    }
                     val day = parsedPaymentDay ?: return@Button
 
                     if (canSave) {
@@ -773,6 +996,7 @@ private fun AddLoanDialog(
                             total,
                             interest,
                             interestRateType,
+                            amortizationType,
                             installments,
                             cuota,
                             normalizedMonthlyInsurance,
@@ -804,6 +1028,42 @@ private fun normalizeMonthlyInterestRateForPreview(
         LoanInterestRateType.MONTHLY_EFFECTIVE -> rate
         LoanInterestRateType.EFFECTIVE_ANNUAL -> ((1.0 + rate / 100.0).pow(1.0 / 12.0) - 1.0) * 100.0
         LoanInterestRateType.NOMINAL_ANNUAL_MONTHLY -> rate / 12.0
+    }
+}
+
+private fun estimatedScheduledPaymentAmount(loan: LoanEntity): Double {
+    if (loan.remainingAmount <= 0.0) return 0.0
+    val fixedCharges = loan.monthlyInsuranceAmount.coerceAtLeast(0.0) +
+            loan.monthlyFeeAmount.coerceAtLeast(0.0)
+    return when (loan.amortizationType) {
+        LoanAmortizationType.FIXED_INSTALLMENT -> loan.monthlyInstallmentAmount
+        LoanAmortizationType.FIXED_PRINCIPAL -> {
+            val interest = loan.remainingAmount *
+                    loan.monthlyInterestRate.coerceAtLeast(0.0) / 100.0
+            val principal = loan.fixedPrincipalAmount.coerceAtLeast(0.0)
+                .coerceAtMost(loan.remainingAmount)
+            fixedCharges + interest + principal
+        }
+    }.coerceAtLeast(0.0)
+}
+
+private fun estimatedMaximumApplicablePayment(loan: LoanEntity): Double {
+    if (loan.remainingAmount <= 0.0) return 0.0
+    val fixedCharges = loan.monthlyInsuranceAmount.coerceAtLeast(0.0) +
+            loan.monthlyFeeAmount.coerceAtLeast(0.0)
+    val interest = loan.remainingAmount *
+            loan.monthlyInterestRate.coerceAtLeast(0.0) / 100.0
+    return fixedCharges + interest + loan.remainingAmount
+}
+
+private fun formatAmountInput(value: Double): String {
+    val normalizedValue = value.coerceAtLeast(0.0)
+    return if (normalizedValue % 1.0 == 0.0) {
+        String.format(Locale.US, "%.0f", normalizedValue)
+    } else {
+        String.format(Locale.US, "%.2f", normalizedValue)
+            .trimEnd('0')
+            .trimEnd('.')
     }
 }
 

@@ -1,6 +1,7 @@
 package com.ivan.finanzapp.domain.calculator
 
 import com.ivan.finanzapp.data.local.entity.LoanEntity
+import com.ivan.finanzapp.domain.model.LoanAmortizationType
 import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import kotlin.math.pow
 import javax.inject.Inject
@@ -30,6 +31,11 @@ class LoanCalculator @Inject constructor() {
         return remainingAmount * monthlyRate
     }
 
+    fun fixedPrincipalAmount(totalAmount: Double, totalInstallments: Int): Double {
+        if (totalAmount <= 0.0 || totalInstallments <= 0) return 0.0
+        return totalAmount / totalInstallments
+    }
+
     fun principalPaid(
         remainingAmount: Double,
         monthlyInterestRate: Double,
@@ -45,11 +51,46 @@ class LoanCalculator @Inject constructor() {
             .coerceAtMost(remainingAmount)
     }
 
-    fun applyInstallmentPayment(loan: LoanEntity): LoanPaymentProgress {
-        if (loan.remainingAmount <= 0.0 || loan.monthlyInstallmentAmount <= 0.0) {
+    fun scheduledPaymentAmount(loan: LoanEntity): Double {
+        if (loan.remainingAmount <= 0.0) return 0.0
+
+        val fixedCharges = loan.monthlyInsuranceAmount.coerceAtLeast(0.0) +
+                loan.monthlyFeeAmount.coerceAtLeast(0.0)
+        return when (loan.amortizationType) {
+            LoanAmortizationType.FIXED_INSTALLMENT ->
+                loan.monthlyInstallmentAmount.coerceAtLeast(0.0)
+
+            LoanAmortizationType.FIXED_PRINCIPAL -> {
+                val interest = monthlyInterestAmount(loan.remainingAmount, loan.monthlyInterestRate)
+                val principal = loan.fixedPrincipalAmount.coerceAtLeast(0.0)
+                    .coerceAtMost(loan.remainingAmount)
+                fixedCharges + interest + principal
+            }
+        }
+    }
+
+    fun applyInstallmentPayment(
+        loan: LoanEntity,
+        actualPaymentAmount: Double? = null
+    ): LoanPaymentProgress {
+        val scheduledPaymentAmount = scheduledPaymentAmount(loan)
+        val requestedPaymentAmount = actualPaymentAmount
+            ?.coerceAtLeast(0.0)
+            ?: scheduledPaymentAmount
+        val hasValidPaymentTerms = when (loan.amortizationType) {
+            LoanAmortizationType.FIXED_INSTALLMENT -> loan.monthlyInstallmentAmount > 0.0
+            LoanAmortizationType.FIXED_PRINCIPAL -> loan.fixedPrincipalAmount > 0.0
+        }
+        if (
+            loan.remainingAmount <= 0.0 ||
+            scheduledPaymentAmount <= 0.0 ||
+            requestedPaymentAmount <= 0.0 ||
+            !hasValidPaymentTerms
+        ) {
             return LoanPaymentProgress(
                 remainingAmount = loan.remainingAmount.coerceAtLeast(0.0),
                 paidInstallments = loan.paidInstallments,
+                scheduledPaymentAmount = 0.0,
                 interestAccrued = 0.0,
                 scheduledInsurance = 0.0,
                 insurancePaid = 0.0,
@@ -60,13 +101,44 @@ class LoanCalculator @Inject constructor() {
                 interestPaid = 0.0,
                 unpaidInterest = 0.0,
                 principalPaid = 0.0,
+                extraPrincipalAmount = 0.0,
+                unappliedPaymentAmount = 0.0,
                 paymentAmount = 0.0
             )
         }
 
+        val scheduledAllocation = allocatePayment(loan, scheduledPaymentAmount)
+        val actualAllocation = allocatePayment(loan, requestedPaymentAmount)
+        val extraPrincipalAmount = (actualAllocation.principalPaid - scheduledAllocation.principalPaid)
+            .coerceAtLeast(0.0)
+
+        return LoanPaymentProgress(
+            remainingAmount = (loan.remainingAmount - actualAllocation.principalPaid).coerceAtLeast(0.0),
+            paidInstallments = loan.paidInstallments + 1,
+            scheduledPaymentAmount = scheduledPaymentAmount,
+            interestAccrued = actualAllocation.interestAccrued,
+            scheduledInsurance = actualAllocation.scheduledInsurance,
+            insurancePaid = actualAllocation.insurancePaid,
+            unpaidInsurance = actualAllocation.unpaidInsurance,
+            scheduledFee = actualAllocation.scheduledFee,
+            feePaid = actualAllocation.feePaid,
+            unpaidFee = actualAllocation.unpaidFee,
+            interestPaid = actualAllocation.interestPaid,
+            unpaidInterest = actualAllocation.unpaidInterest,
+            principalPaid = actualAllocation.principalPaid,
+            extraPrincipalAmount = extraPrincipalAmount,
+            unappliedPaymentAmount = actualAllocation.unappliedPaymentAmount,
+            paymentAmount = actualAllocation.paymentAmount
+        )
+    }
+
+    private fun allocatePayment(
+        loan: LoanEntity,
+        paymentAmount: Double
+    ): LoanPaymentAllocation {
         val scheduledInsurance = loan.monthlyInsuranceAmount.coerceAtLeast(0.0)
         val scheduledFee = loan.monthlyFeeAmount.coerceAtLeast(0.0)
-        val availablePayment = loan.monthlyInstallmentAmount.coerceAtLeast(0.0)
+        val availablePayment = paymentAmount.coerceAtLeast(0.0)
 
         val insurancePaid = scheduledInsurance.coerceAtMost(availablePayment)
         val afterInsurance = (availablePayment - insurancePaid).coerceAtLeast(0.0)
@@ -75,35 +147,46 @@ class LoanCalculator @Inject constructor() {
 
         val interestAccrued = monthlyInterestAmount(loan.remainingAmount, loan.monthlyInterestRate)
         val interestPaid = interestAccrued.coerceAtMost(afterFixedCharges)
-        val principalPaid = principalPaid(
-            remainingAmount = loan.remainingAmount,
-            monthlyInterestRate = loan.monthlyInterestRate,
-            monthlyInstallmentAmount = loan.monthlyInstallmentAmount,
-            monthlyInsuranceAmount = scheduledInsurance,
-            monthlyFeeAmount = scheduledFee
-        )
+        val afterInterest = (afterFixedCharges - interestPaid).coerceAtLeast(0.0)
+        val principalPaid = afterInterest.coerceAtMost(loan.remainingAmount)
+        val appliedPaymentAmount = insurancePaid + feePaid + interestPaid + principalPaid
 
-        return LoanPaymentProgress(
-            remainingAmount = (loan.remainingAmount - principalPaid).coerceAtLeast(0.0),
-            paidInstallments = loan.paidInstallments + 1,
-            interestAccrued = interestAccrued,
+        return LoanPaymentAllocation(
             scheduledInsurance = scheduledInsurance,
             insurancePaid = insurancePaid,
             unpaidInsurance = (scheduledInsurance - insurancePaid).coerceAtLeast(0.0),
             scheduledFee = scheduledFee,
             feePaid = feePaid,
             unpaidFee = (scheduledFee - feePaid).coerceAtLeast(0.0),
+            interestAccrued = interestAccrued,
             interestPaid = interestPaid,
             unpaidInterest = (interestAccrued - interestPaid).coerceAtLeast(0.0),
             principalPaid = principalPaid,
-            paymentAmount = insurancePaid + feePaid + interestPaid + principalPaid
+            unappliedPaymentAmount = (availablePayment - appliedPaymentAmount).coerceAtLeast(0.0),
+            paymentAmount = appliedPaymentAmount
         )
     }
 }
 
+private data class LoanPaymentAllocation(
+    val scheduledInsurance: Double,
+    val insurancePaid: Double,
+    val unpaidInsurance: Double,
+    val scheduledFee: Double,
+    val feePaid: Double,
+    val unpaidFee: Double,
+    val interestAccrued: Double,
+    val interestPaid: Double,
+    val unpaidInterest: Double,
+    val principalPaid: Double,
+    val unappliedPaymentAmount: Double,
+    val paymentAmount: Double
+)
+
 data class LoanPaymentProgress(
     val remainingAmount: Double,
     val paidInstallments: Int,
+    val scheduledPaymentAmount: Double,
     val interestAccrued: Double,
     val scheduledInsurance: Double,
     val insurancePaid: Double,
@@ -114,5 +197,7 @@ data class LoanPaymentProgress(
     val interestPaid: Double,
     val unpaidInterest: Double,
     val principalPaid: Double,
+    val extraPrincipalAmount: Double,
+    val unappliedPaymentAmount: Double,
     val paymentAmount: Double
 )

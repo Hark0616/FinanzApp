@@ -43,6 +43,8 @@ data class LoanEntity(
     val paidInstallments: Int = 0,
     /** Valor de la cuota mensual pactada (capital + interes + seguros/cargos). */
     val monthlyInstallmentAmount: Double,
+    /** Capital mensual pactado cuando el metodo es FIXED_PRINCIPAL. */
+    val fixedPrincipalAmount: Double = 0.0,
     /** Seguro mensual incluido en la cuota pactada. No reduce capital. */
     val monthlyInsuranceAmount: Double = 0.0,
     /** Cargos fijos mensuales incluidos en la cuota pactada. No reducen capital. */

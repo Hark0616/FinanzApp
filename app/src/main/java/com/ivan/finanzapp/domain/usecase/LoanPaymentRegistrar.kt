@@ -28,11 +28,15 @@ class LoanPaymentRegistrar @Inject constructor(
 
     suspend fun registerInstallmentPayment(
         loanId: String,
-        paymentDateMillis: Long = System.currentTimeMillis()
+        paymentDateMillis: Long = System.currentTimeMillis(),
+        actualPaymentAmount: Double? = null
     ): LoanPaymentRegistration? {
         return database.withTransaction {
             val loan = loanDao.getLoanById(loanId) ?: return@withTransaction null
-            val paymentProgress = loanCalculator.applyInstallmentPayment(loan)
+            val paymentProgress = loanCalculator.applyInstallmentPayment(
+                loan = loan,
+                actualPaymentAmount = actualPaymentAmount
+            )
             if (paymentProgress.paymentAmount <= 0.0) return@withTransaction null
 
             val nextPaymentDateMillis = nextPaymentDateAfter(loan.nextPaymentDate)
@@ -57,7 +61,7 @@ class LoanPaymentRegistrar @Inject constructor(
                 loanId = loan.id,
                 transactionId = transactionId,
                 installmentNumber = paymentProgress.paidInstallments,
-                scheduledPaymentAmount = loan.monthlyInstallmentAmount,
+                scheduledPaymentAmount = paymentProgress.scheduledPaymentAmount,
                 actualPaymentAmount = paymentProgress.paymentAmount,
                 scheduledInsuranceAmount = paymentProgress.scheduledInsurance,
                 insurancePaidAmount = paymentProgress.insurancePaid,
@@ -69,6 +73,8 @@ class LoanPaymentRegistrar @Inject constructor(
                 interestPaidAmount = paymentProgress.interestPaid,
                 unpaidInterestAmount = paymentProgress.unpaidInterest,
                 principalAmount = paymentProgress.principalPaid,
+                extraPrincipalAmount = paymentProgress.extraPrincipalAmount,
+                unappliedPaymentAmount = paymentProgress.unappliedPaymentAmount,
                 remainingAmountBefore = loan.remainingAmount,
                 remainingAmountAfter = paymentProgress.remainingAmount,
                 paymentDate = paymentDateMillis,

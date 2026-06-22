@@ -49,6 +49,7 @@ FinanzApp es una aplicación Android nativa diseñada para gestionar finanzas pe
 
 - La app sigue en etapa de desarrollo, sin datos de clientes reales; se prioriza que el modelo y la experiencia funcionen correctamente incluso si durante esta fase conviene usar migraciones destructivas.
 - La lógica financiera debe guardar datos finos y auditables en backend, manteniendo una UI clara para el usuario final.
+- La fuente principal de ingreso de datos debe ser la lectura y sincronización confiable de notificaciones bancarias; la interfaz manual existe como respaldo, ajuste y auditoría, pero no debe reemplazar el pipeline automático.
 - La dirección visual deseada es **luxury, minimalista y clean**.
 
 ---
