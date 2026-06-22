@@ -93,6 +93,33 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    fun onGoogleSignInSuccess(idToken: String, onSuccess: () -> Unit) {
+        _uiState.update { it.copy(isLoading = true, errorMessage = null, successMessage = null) }
+        viewModelScope.launch {
+            authManager.signInWithGoogle(idToken)
+                .onSuccess {
+                    _uiState.update { it.copy(isLoading = false, successMessage = "¡Sesión iniciada con Google!") }
+                    onSuccess()
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = translateAuthError(error.message ?: "Error al iniciar sesión con Google.")
+                        )
+                    }
+                }
+        }
+    }
+
+    fun onGoogleSignInError(message: String) {
+        _uiState.update { it.copy(isLoading = false, errorMessage = message) }
+    }
+
+    fun startGoogleSignInLoading() {
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+    }
+
     private fun translateAuthError(error: String): String {
         return when {
             error.contains("Invalid login credentials", ignoreCase = true) -> "Correo o contraseña incorrectos."

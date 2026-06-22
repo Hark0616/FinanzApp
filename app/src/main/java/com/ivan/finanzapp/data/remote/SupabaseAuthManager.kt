@@ -2,7 +2,9 @@ package com.ivan.finanzapp.data.remote
 
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.auth.user.UserInfo
 import kotlinx.coroutines.flow.Flow
@@ -57,6 +59,21 @@ class SupabaseAuthManager @Inject constructor(
             authModule.signInWith(Email) {
                 this.email = email
                 this.password = password
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Inicia sesión o se registra en Supabase utilizando un ID Token de Google obtenido localmente.
+     */
+    suspend fun signInWithGoogle(googleIdToken: String): Result<Unit> {
+        return try {
+            authModule.signInWith(IDToken) {
+                idToken = googleIdToken
+                provider = Google
             }
             Result.success(Unit)
         } catch (e: Exception) {

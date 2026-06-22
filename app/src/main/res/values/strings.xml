@@ -35,5 +35,8 @@
     <!-- Widgets -->
     <string name="widget_title">Balance Ejecutivo</string>
     <string name="widget_description">Muestra el saldo disponible consolidado de tus cuentas y deudas de tarjetas de crédito.</string>
+
+    <!-- Google Auth -->
+    <string name="google_web_client_id">YOUR_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com</string>
 </resources>
 
