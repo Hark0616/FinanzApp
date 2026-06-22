@@ -102,6 +102,12 @@ dependencies {
     // Seguridad (EncryptedSharedPreferences para guardar API key)
     implementation("androidx.security:security-crypto:1.1.0")
 
+    // Supabase
+    implementation(platform("io.github.jan-tennert.supabase:bom:3.6.0"))
+    implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    implementation("io.github.jan-tennert.supabase:auth-kt")
+    implementation("io.ktor:ktor-client-android:3.0.3")
+
     // Glance (Widgets en Jetpack Compose)
     implementation("androidx.glance:glance-appwidget:1.1.0")
     implementation("androidx.glance:glance-material3:1.1.0")
