@@ -37,9 +37,25 @@ class SmsParser : BankParser {
         RegexOption.IGNORE_CASE
     )
 
+    private val regexAvVillasCompraTc = Regex(
+        """AVVillas\.\s+\d{1,2}/\d{1,2}/\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?\s+COMPRA\s+CON\s+TU\s+TARJETA\s+CREDITO\s+(\d{4})\s+POR\s+\$?\s*([\d.,]+)\s+EN\s+(.+?)\s*$""",
+        RegexOption.IGNORE_CASE
+    )
+
     override fun parse(title: String, text: String): ParsedTransaction? {
-        val fullText = "$title $text"
+        val fullText = "$title $text".trim()
         val isBancolombia = fullText.contains("Bancolombia", ignoreCase = true) || title.contains("890099")
+
+        regexAvVillasCompraTc.find(fullText)?.let { match ->
+            val amount = ParserUtils.parseAmount(match.groupValues[2]) ?: return@let
+            return ParsedTransaction(
+                type = TransactionType.GASTO_TC,
+                amount = amount,
+                merchant = ParserUtils.cleanMerchant(match.groupValues[3]),
+                source = BankSource.AVVILLAS,
+                confidence = 0.98
+            )
+        }
 
         val currentSource = if (isBancolombia) BankSource.BANCOLOMBIA else BankSource.SMS
 

@@ -55,16 +55,76 @@ class DaviviendaParser : BankParser {
         RegexOption.IGNORE_CASE
     )
 
+    private val regexAbonoCuenta = Regex(
+        """DAVIVIENDA\s+Abono\s+(.+?)(?:,\s*|\s+)\$?\s*([\d.,]+),\s*Cta\s+de\s+Ahorros\s+\*(\d{4}),\s*Hora\s+\d{1,2}:\d{2},\s*Lugar\s+(.+?)\.?\s*$""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val regexDescuentoCuenta = Regex(
+        """DAVIVIENDA\s+Descuento\s+(.+?)(?:,\s*|\s+)\$?\s*([\d.,]+),\s*Cta\s+de\s+Ahorros\s+\*(\d{4}),\s*Hora\s+\d{1,2}:\d{2},\s*Lugar\s+(.+?)\.?\s*$""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val regexCompraTarjetaDavivienda = Regex(
+        """DAVIVIENDA:?\s+Compra\s+\.\s+Aprobado\(a\),\s*\$?\s*([\d.,]+),\s*Tarjeta\s+\*(\d{4}),\s*Hora\s+\d{1,2}:\d{2},\s*Lugar\s+(.+?)\.?\s*$""",
+        RegexOption.IGNORE_CASE
+    )
+
     override fun parse(title: String, text: String): ParsedTransaction? {
-        val fullText = "$title $text"
+        val fullText = "$title $text".trim()
         val saldo = regexSaldo.find(fullText)?.groupValues?.get(1)?.let { ParserUtils.parseAmount(it) }
+
+        regexCompraTarjetaDavivienda.find(fullText)?.let { match ->
+            val amount = ParserUtils.parseAmount(match.groupValues[1]) ?: return@let
+            return ParsedTransaction(
+                type = TransactionType.GASTO_TC,
+                amount = amount,
+                merchant = ParserUtils.cleanMerchant(match.groupValues[3]),
+                availableBalance = saldo,
+                source = source,
+                confidence = 0.98
+            )
+        }
+
+        regexAbonoCuenta.find(fullText)?.let { match ->
+            val amount = ParserUtils.parseAmount(match.groupValues[2]) ?: return@let
+            val description = ParserUtils.cleanMerchant(match.groupValues[1])
+            val place = ParserUtils.cleanMerchant(match.groupValues[4])
+            return ParsedTransaction(
+                type = TransactionType.INGRESO,
+                amount = amount,
+                merchant = place ?: description ?: "Abono Davivienda",
+                availableBalance = saldo,
+                source = source,
+                confidence = 0.96
+            )
+        }
+
+        regexDescuentoCuenta.find(fullText)?.let { match ->
+            val amount = ParserUtils.parseAmount(match.groupValues[2]) ?: return@let
+            val description = ParserUtils.cleanMerchant(match.groupValues[1])
+            val place = ParserUtils.cleanMerchant(match.groupValues[4])
+            val merchant = if (description.equals("Pago a Credito", ignoreCase = true)) {
+                description
+            } else {
+                place ?: description
+            }
+            return ParsedTransaction(
+                type = TransactionType.GASTO,
+                amount = amount,
+                merchant = merchant ?: "Descuento Davivienda",
+                availableBalance = saldo,
+                source = source,
+                confidence = 0.96
+            )
+        }
 
         regexCompra.find(fullText)?.let { match ->
             val amount = ParserUtils.parseAmount(match.groupValues[1]) ?: return@let
             return ParsedTransaction(
                 type = TransactionType.GASTO_TC,
                 amount = amount,
-                merchant = match.groupValues.getOrNull(2)?.trim(),
+                merchant = ParserUtils.cleanMerchant(match.groupValues.getOrNull(2)),
                 availableBalance = saldo,
                 source = source,
                 confidence = 0.85
@@ -88,7 +148,7 @@ class DaviviendaParser : BankParser {
             return ParsedTransaction(
                 type = TransactionType.INGRESO,
                 amount = amount,
-                merchant = match.groupValues.getOrNull(2)?.trim()?.ifBlank { null },
+                merchant = ParserUtils.cleanMerchant(match.groupValues.getOrNull(2)),
                 availableBalance = saldo,
                 source = source,
                 confidence = 0.85
@@ -100,7 +160,7 @@ class DaviviendaParser : BankParser {
             return ParsedTransaction(
                 type = TransactionType.TRANSFERENCIA,
                 amount = amount,
-                merchant = match.groupValues.getOrNull(2)?.trim()?.ifBlank { null },
+                merchant = ParserUtils.cleanMerchant(match.groupValues.getOrNull(2)),
                 availableBalance = saldo,
                 source = source,
                 confidence = 0.85

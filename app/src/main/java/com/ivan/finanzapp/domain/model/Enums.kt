@@ -26,6 +26,7 @@ enum class TransactionType {
  */
 enum class BankSource {
     DAVIVIENDA,
+    AVVILLAS,
     NEQUI,
     DAVIPLATA,
     BANCOLOMBIA,

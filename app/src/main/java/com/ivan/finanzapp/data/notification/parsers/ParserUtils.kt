@@ -20,12 +20,13 @@ object ParserUtils {
         val match = regex.find(raw.replace("$", "")) ?: return null
         var numberStr = match.value
 
-        // Si tiene tanto '.' como ',', el último símbolo es el decimal
         val lastDot = numberStr.lastIndexOf('.')
         val lastComma = numberStr.lastIndexOf(',')
 
         numberStr = when {
             lastDot == -1 && lastComma == -1 -> numberStr
+            lastDot == -1 -> normalizeSingleSeparatorAmount(numberStr, ',')
+            lastComma == -1 -> normalizeSingleSeparatorAmount(numberStr, '.')
             lastComma > lastDot -> {
                 // Formato: 1.234.567,89  -> punto = miles, coma = decimal
                 numberStr.replace(".", "").replace(",", ".")
@@ -38,6 +39,30 @@ object ParserUtils {
         }
 
         return numberStr.toDoubleOrNull()
+    }
+
+    private fun normalizeSingleSeparatorAmount(raw: String, separator: Char): String {
+        val parts = raw.split(separator)
+        if (parts.size > 2) {
+            return parts.joinToString("")
+        }
+
+        val decimalsOrThousands = parts.getOrNull(1).orEmpty()
+        return when (decimalsOrThousands.length) {
+            3 -> parts.joinToString("")
+            2 -> if (separator == ',') raw.replace(",", ".") else raw
+            else -> parts.joinToString("")
+        }
+    }
+
+    fun cleanMerchant(raw: String?): String? {
+        val trimmed = raw
+            ?.replace(Regex("""\[(.+?)]\((.+?)\)""")) { it.groupValues[1] }
+            ?.trim()
+            ?.trim('.', '-', ' ', '"')
+            ?.replace(Regex("""\s+"""), " ")
+
+        return trimmed?.ifBlank { null }
     }
 
     /**
@@ -55,7 +80,7 @@ object ParserUtils {
         for (pattern in patterns) {
             val match = pattern.find(text)
             if (match != null) {
-                return match.groupValues[1].trim().trim('.', '-', ' ')
+                return cleanMerchant(match.groupValues[1])
             }
         }
         return null
