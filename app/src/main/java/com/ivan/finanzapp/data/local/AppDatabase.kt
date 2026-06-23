@@ -314,8 +314,22 @@ abstract class AppDatabase : RoomDatabase() {
          */
         fun getInstance(context: Context, passphrase: ByteArray): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: build(context, passphrase).also { INSTANCE = it }
+                INSTANCE ?: build(context, passphrase).also { db ->
+                    INSTANCE = db
+                    db.registerWidgetUpdateObserver(context.applicationContext)
+                }
             }
+        }
+
+        private fun AppDatabase.registerWidgetUpdateObserver(context: Context) {
+            val observer = object : androidx.room.InvalidationTracker.Observer(
+                arrayOf("accounts", "credit_cards", "deferred_purchases", "transactions", "categories", "loans")
+            ) {
+                override fun onInvalidated(tables: Set<String>) {
+                    com.ivan.finanzapp.ui.widget.WidgetUpdater.updateAllWidgets(context)
+                }
+            }
+            this.invalidationTracker.addObserver(observer)
         }
 
         private fun build(context: Context, passphrase: ByteArray): AppDatabase {

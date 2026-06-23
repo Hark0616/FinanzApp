@@ -31,7 +31,7 @@
             android:action="android.intent.action.VIEW"
             android:targetPackage="com.ivan.finanzapp"
             android:targetClass="com.ivan.finanzapp.ui.quickadd.QuickAddActivity">
-            <url-template android:value="finanzapp://quickadd?amount={amount}&amp;merchant={merchant}&amp;voice=true" />
+            <url-template android:value="finanzapp://quickadd?amount={amount}&amp;merchant={merchant}" />
             <parameter
                 android:name="amount"
                 android:key="amount" />

@@ -10,6 +10,7 @@ import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
+import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.model.TransactionType
@@ -32,7 +33,8 @@ class TransactionsViewModel @Inject constructor(
     private val creditCardDao: CreditCardDao,
     private val deferredPurchaseDao: DeferredPurchaseDao,
     private val calculator: CreditCardCalculator,
-    private val addManualTransactionUseCase: AddManualTransactionUseCase
+    private val addManualTransactionUseCase: AddManualTransactionUseCase,
+    private val cloudSyncScheduler: CloudSyncScheduler
 ) : ViewModel() {
 
     val uiState: StateFlow<TransactionsUiState> = combine(
@@ -67,6 +69,7 @@ class TransactionsViewModel @Inject constructor(
         viewModelScope.launch {
             val tx = transactionDao.getById(transactionId) ?: return@launch
             transactionDao.update(tx.copy(needsReview = false))
+            cloudSyncScheduler.syncSoon()
         }
     }
 
@@ -74,6 +77,7 @@ class TransactionsViewModel @Inject constructor(
         viewModelScope.launch {
             val tx = transactionDao.getById(transactionId) ?: return@launch
             transactionDao.update(tx.copy(categoryId = categoryId, needsReview = false))
+            cloudSyncScheduler.syncSoon()
         }
     }
 
@@ -123,6 +127,7 @@ class TransactionsViewModel @Inject constructor(
                 // 3. Actualizar la transacción
                 transactionDao.update(tx.copy(accountId = resolvedNewAccountId, type = newType))
             }
+            cloudSyncScheduler.syncSoon()
         }
     }
 
@@ -155,6 +160,7 @@ class TransactionsViewModel @Inject constructor(
                 }
                 transactionDao.delete(transactionId)
             }
+            cloudSyncScheduler.syncSoon()
         }
     }
 

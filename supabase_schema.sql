@@ -216,6 +216,22 @@ ALTER TABLE notification_sync_ledger ENABLE ROW LEVEL SECURITY;
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ==========================================
 
+-- Keep this setup script re-runnable while the project is being configured.
+DROP POLICY IF EXISTS "Read categories" ON categories;
+DROP POLICY IF EXISTS "Insert own categories" ON categories;
+DROP POLICY IF EXISTS "Update own categories" ON categories;
+DROP POLICY IF EXISTS "Delete own categories" ON categories;
+DROP POLICY IF EXISTS "Manage own accounts" ON accounts;
+DROP POLICY IF EXISTS "Manage own credit cards" ON credit_cards;
+DROP POLICY IF EXISTS "Manage own transactions" ON transactions;
+DROP POLICY IF EXISTS "Manage own mappings" ON merchant_category_mappings;
+DROP POLICY IF EXISTS "Manage own loans" ON loans;
+DROP POLICY IF EXISTS "Manage own loan payments" ON loan_payments;
+DROP POLICY IF EXISTS "Manage own deferred purchases" ON deferred_purchases;
+DROP POLICY IF EXISTS "Manage own assets" ON assets;
+DROP POLICY IF EXISTS "Manage own custom rules" ON custom_rules;
+DROP POLICY IF EXISTS "Manage own ledger" ON notification_sync_ledger;
+
 -- Policies for CATEGORIES (users can read defaults and their own, but only write their own)
 CREATE POLICY "Read categories" ON categories FOR SELECT 
     USING (user_id IS NULL OR auth.uid() = user_id);

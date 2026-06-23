@@ -19,6 +19,10 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
+import com.ivan.finanzapp.data.local.dao.CategoryDao
+import com.ivan.finanzapp.data.local.dao.TransactionDao
+import com.ivan.finanzapp.data.local.dao.LoanDao
+import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.quickadd.QuickAddActivity
@@ -33,6 +37,10 @@ import dagger.hilt.components.SingletonComponent
 interface WidgetEntryPoint {
     fun accountDao(): AccountDao
     fun creditCardDao(): CreditCardDao
+    fun categoryDao(): CategoryDao
+    fun transactionDao(): TransactionDao
+    fun loanDao(): LoanDao
+    fun deferredPurchaseDao(): DeferredPurchaseDao
 }
 
 class FinanzAppWidget : GlanceAppWidget() {

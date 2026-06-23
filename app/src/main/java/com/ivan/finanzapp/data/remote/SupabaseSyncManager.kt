@@ -1,6 +1,9 @@
 package com.ivan.finanzapp.data.remote
 
+import com.ivan.finanzapp.data.local.SecurePrefs
+import com.ivan.finanzapp.data.local.AppDatabase
 import com.ivan.finanzapp.data.local.dao.*
+import androidx.room.withTransaction
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
@@ -8,10 +11,20 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class SyncSummary(
+    val remoteDeletes: Int,
+    val uploadedRows: Int,
+    val downloadedRows: Int
+) {
+    val totalRowsTouched: Int = remoteDeletes + uploadedRows + downloadedRows
+}
+
 @Singleton
 class SupabaseSyncManager @Inject constructor(
     private val supabaseClient: SupabaseClient,
     private val authManager: SupabaseAuthManager,
+    private val securePrefs: SecurePrefs,
+    private val database: AppDatabase,
     private val accountDao: AccountDao,
     private val creditCardDao: CreditCardDao,
     private val categoryDao: CategoryDao,
@@ -33,11 +46,14 @@ class SupabaseSyncManager @Inject constructor(
      * 2. Sube (upsert) todos los registros locales de las 11 entidades.
      * 3. Descarga (select) y guarda localmente todos los registros del usuario en la nube.
      */
-    suspend fun sync(): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun sync(): Result<SyncSummary> = withContext(Dispatchers.IO) {
         try {
             val userId = authManager.currentUser?.id ?: return@withContext Result.failure(
                 Exception("Usuario no autenticado. Inicia sesión primero.")
             )
+            var remoteDeletes = 0
+            var uploadedRows = 0
+            var downloadedRows = 0
 
             // ==========================================
             // FASE 1: PROCESAR ELIMINACIONES
@@ -56,6 +72,7 @@ class SupabaseSyncManager @Inject constructor(
                         }
                     }
                     syncDeleteLogDao.delete(log)
+                    remoteDeletes += 1
                 } catch (e: Exception) {
                     // Si hay un error de red, guardamos el log para intentar borrar después.
                 }
@@ -70,6 +87,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localAccounts.isNotEmpty()) {
                 val dtos = localAccounts.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("accounts").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // 2. Tarjetas de Crédito (Credit Cards)
@@ -77,6 +95,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localCards.isNotEmpty()) {
                 val dtos = localCards.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("credit_cards").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // 3. Categorías Personalizadas (Categories - exclude default ones)
@@ -84,6 +103,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localCategories.isNotEmpty()) {
                 val dtos = localCategories.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("categories").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // 4. Transacciones (Transactions)
@@ -91,6 +111,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localTransactions.isNotEmpty()) {
                 val dtos = localTransactions.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("transactions").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // 5. Mapeos Comercio-Categoría (Merchant category mappings)
@@ -98,6 +119,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localMappings.isNotEmpty()) {
                 val dtos = localMappings.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("merchant_category_mappings").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // 6. Préstamos / Créditos (Loans)
@@ -105,6 +127,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localLoans.isNotEmpty()) {
                 val dtos = localLoans.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("loans").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // 7. Historial de Pagos de Cuotas (Loan Payments)
@@ -112,6 +135,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localPayments.isNotEmpty()) {
                 val dtos = localPayments.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("loan_payments").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // 8. Compras Diferidas (Deferred Purchases)
@@ -119,6 +143,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localPurchases.isNotEmpty()) {
                 val dtos = localPurchases.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("deferred_purchases").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // 9. Activos Físicos/Otros (Assets)
@@ -126,6 +151,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localAssets.isNotEmpty()) {
                 val dtos = localAssets.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("assets").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // 10. Reglas Personalizadas (Custom Rules)
@@ -133,6 +159,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localRules.isNotEmpty()) {
                 val dtos = localRules.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("custom_rules").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // 11. Registro Histórico de Notificaciones (Sync Ledger)
@@ -140,6 +167,7 @@ class SupabaseSyncManager @Inject constructor(
             if (localLedger.isNotEmpty()) {
                 val dtos = localLedger.map { it.toDto().copy(user_id = userId) }
                 postgrestModule.from("notification_sync_ledger").upsert(dtos)
+                uploadedRows += dtos.size
             }
 
             // ==========================================
@@ -150,85 +178,107 @@ class SupabaseSyncManager @Inject constructor(
             val remoteCategories = postgrestModule.from("categories")
                 .select()
                 .decodeList<CategoryDto>()
-            for (catDto in remoteCategories) {
-                categoryDao.upsert(catDto.toEntity())
-            }
 
             // 2. Cuentas
             val remoteAccounts = postgrestModule.from("accounts")
                 .select()
                 .decodeList<AccountDto>()
-            for (accDto in remoteAccounts) {
-                accountDao.upsert(accDto.toEntity())
-            }
 
             // 3. Tarjetas de Crédito
             val remoteCards = postgrestModule.from("credit_cards")
                 .select()
                 .decodeList<CreditCardDto>()
-            for (cardDto in remoteCards) {
-                creditCardDao.upsert(cardDto.toEntity())
-            }
 
             // 4. Transacciones
             val remoteTransactions = postgrestModule.from("transactions")
                 .select()
                 .decodeList<TransactionDto>()
-            transactionDao.upsertAll(remoteTransactions.map { it.toEntity() })
 
             // 5. Mapeo Comercio-Categoría
             val remoteMappings = postgrestModule.from("merchant_category_mappings")
                 .select()
                 .decodeList<MerchantCategoryMappingDto>()
-            for (mapDto in remoteMappings) {
-                merchantMappingDao.upsert(mapDto.toEntity())
-            }
 
             // 6. Préstamos
             val remoteLoans = postgrestModule.from("loans")
                 .select()
                 .decodeList<LoanDto>()
-            for (loanDto in remoteLoans) {
-                loanDao.upsert(loanDto.toEntity())
-            }
 
             // 7. Pagos de Cuotas
             val remotePayments = postgrestModule.from("loan_payments")
                 .select()
                 .decodeList<LoanPaymentDto>()
-            loanPaymentDao.upsertAll(remotePayments.map { it.toEntity() })
 
             // 8. Compras Diferidas
             val remotePurchases = postgrestModule.from("deferred_purchases")
                 .select()
                 .decodeList<DeferredPurchaseDto>()
-            for (dpDto in remotePurchases) {
-                deferredPurchaseDao.upsert(dpDto.toEntity())
-            }
 
             // 9. Activos
             val remoteAssets = postgrestModule.from("assets")
                 .select()
                 .decodeList<AssetDto>()
-            for (assetDto in remoteAssets) {
-                assetDao.upsert(assetDto.toEntity())
-            }
 
             // 10. Reglas
             val remoteRules = postgrestModule.from("custom_rules")
                 .select()
                 .decodeList<CustomRuleDto>()
-            for (ruleDto in remoteRules) {
-                customRuleDao.upsert(ruleDto.toEntity())
-            }
 
             // 11. Ledger de Notificaciones
             val remoteLedger = postgrestModule.from("notification_sync_ledger")
                 .select()
                 .decodeList<NotificationSyncLedgerDto>()
-            notificationSyncLedgerDao.upsertAll(remoteLedger.map { it.toEntity() })
 
-            Result.success(Unit)
+            downloadedRows += remoteCategories.size +
+                    remoteAccounts.size +
+                    remoteCards.size +
+                    remoteTransactions.size +
+                    remoteMappings.size +
+                    remoteLoans.size +
+                    remotePayments.size +
+                    remotePurchases.size +
+                    remoteAssets.size +
+                    remoteRules.size +
+                    remoteLedger.size
+
+            database.withTransaction {
+                for (catDto in remoteCategories) {
+                    categoryDao.upsert(catDto.toEntity())
+                }
+                for (accDto in remoteAccounts) {
+                    accountDao.upsert(accDto.toEntity())
+                }
+                for (cardDto in remoteCards) {
+                    creditCardDao.upsert(cardDto.toEntity())
+                }
+                transactionDao.upsertAll(remoteTransactions.map { it.toEntity() })
+                for (mapDto in remoteMappings) {
+                    merchantMappingDao.upsert(mapDto.toEntity())
+                }
+                for (loanDto in remoteLoans) {
+                    loanDao.upsert(loanDto.toEntity())
+                }
+                loanPaymentDao.upsertAll(remotePayments.map { it.toEntity() })
+                for (dpDto in remotePurchases) {
+                    deferredPurchaseDao.upsert(dpDto.toEntity())
+                }
+                for (assetDto in remoteAssets) {
+                    assetDao.upsert(assetDto.toEntity())
+                }
+                for (ruleDto in remoteRules) {
+                    customRuleDao.upsert(ruleDto.toEntity())
+                }
+                notificationSyncLedgerDao.upsertAll(remoteLedger.map { it.toEntity() })
+            }
+
+            securePrefs.setLastCloudSyncAt(System.currentTimeMillis())
+            Result.success(
+                SyncSummary(
+                    remoteDeletes = remoteDeletes,
+                    uploadedRows = uploadedRows,
+                    downloadedRows = downloadedRows
+                )
+            )
         } catch (e: Exception) {
             Result.failure(e)
         }

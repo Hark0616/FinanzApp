@@ -17,5 +17,10 @@ data class SettingsUiState(
     val isLocalAiEnabled: Boolean = false,
     val processingMode: String = SecurePrefs.MODE_PARSER,
     val currentUserEmail: String? = null,
-    val isSyncing: Boolean = false
+    val isSyncing: Boolean = false,
+    val lastCloudSyncAt: Long = 0L,
+    val syncStatusMessage: String? = null,
+    val syncErrorMessage: String? = null,
+    val isAppLockEnabled: Boolean = false,
+    val isSecurityLabMode: Boolean = false
 )

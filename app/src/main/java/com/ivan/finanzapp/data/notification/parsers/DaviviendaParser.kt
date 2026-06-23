@@ -105,13 +105,17 @@ class DaviviendaParser : BankParser {
             val amount = ParserUtils.parseAmount(match.groupValues[2]) ?: return@let
             val description = ParserUtils.cleanMerchant(match.groupValues[1])
             val place = ParserUtils.cleanMerchant(match.groupValues[4])
+            val isExternalCreditCardPayment = place?.contains("BANCO COMERCIAL AV VI", ignoreCase = true) == true ||
+                    place?.contains("AV VILLAS", ignoreCase = true) == true
             val merchant = if (description.equals("Pago a Credito", ignoreCase = true)) {
                 description
+            } else if (isExternalCreditCardPayment) {
+                "Pago Tarjeta de Crédito AV Villas"
             } else {
                 place ?: description
             }
             return ParsedTransaction(
-                type = TransactionType.GASTO,
+                type = if (isExternalCreditCardPayment) TransactionType.TRANSFERENCIA else TransactionType.GASTO,
                 amount = amount,
                 merchant = merchant ?: "Descuento Davivienda",
                 availableBalance = saldo,

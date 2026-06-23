@@ -71,11 +71,25 @@ class SecurePrefs @Inject constructor(
         prefs.edit().putString(KEY_PROCESSING_MODE, mode).apply()
     }
 
+    fun getLastCloudSyncAt(): Long = prefs.getLong(KEY_LAST_CLOUD_SYNC_AT, 0L)
+
+    fun setLastCloudSyncAt(timestampMillis: Long) {
+        prefs.edit().putLong(KEY_LAST_CLOUD_SYNC_AT, timestampMillis).apply()
+    }
+
+    fun isAppLockEnabled(): Boolean = prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
+
+    fun setAppLockEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, enabled).apply()
+    }
+
     companion object {
         private const val KEY_DB_PASSPHRASE = "db_passphrase"
         private const val KEY_OPENROUTER_API_KEY = "openrouter_api_key"
         private const val KEY_LOCAL_AI_ENABLED = "local_ai_enabled"
         private const val KEY_PROCESSING_MODE = "processing_mode"
+        private const val KEY_LAST_CLOUD_SYNC_AT = "last_cloud_sync_at"
+        private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
 
         const val MODE_PARSER = "PARSER"
         const val MODE_LOCAL_AI = "LOCAL_AI"

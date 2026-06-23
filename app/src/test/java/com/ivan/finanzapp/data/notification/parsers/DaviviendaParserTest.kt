@@ -38,7 +38,7 @@ class DaviviendaParserTest {
             "DAVIVIENDA Descuento Pago a Credito, \$713,000, Cta de Ahorros *5607,Hora 16:21,Lugar App Davivienda." to
                     ExpectedTransaction(TransactionType.GASTO, 713_000.0, "Pago a Credito"),
             "DAVIVIENDA Descuento en Internet, \$3,667,203, Cta de Ahorros *5607,Hora 16:38,Lugar PSE BANCO COMERCIAL AV VI." to
-                    ExpectedTransaction(TransactionType.GASTO, 3_667_203.0, "PSE BANCO COMERCIAL AV VI")
+                    ExpectedTransaction(TransactionType.TRANSFERENCIA, 3_667_203.0, "Pago Tarjeta de Crédito AV Villas")
         )
 
         for ((message, expected) in cases) {

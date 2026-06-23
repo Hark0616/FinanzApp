@@ -17,7 +17,9 @@ import com.ivan.finanzapp.data.notification.parsers.ParsedTransaction
 import com.ivan.finanzapp.data.notification.parsers.ParserDispatcher
 import com.ivan.finanzapp.data.notification.parsers.ParserUtils
 import com.ivan.finanzapp.data.remote.LocalAiClassifier
+import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.data.remote.TransactionAiClassifier
+import com.ivan.finanzapp.data.security.SecureLog
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.domain.usecase.AccountResolver
@@ -67,7 +69,8 @@ class TransactionProcessor @Inject constructor(
     private val creditCardDao: CreditCardDao,
     private val deferredPurchaseDao: DeferredPurchaseDao,
     private val notificationSyncLedgerDao: NotificationSyncLedgerDao,
-    private val calculator: CreditCardCalculator
+    private val calculator: CreditCardCalculator,
+    private val cloudSyncScheduler: CloudSyncScheduler
 ) {
 
     private val processorScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -99,15 +102,17 @@ class TransactionProcessor @Inject constructor(
             )
 
             var ledgerPersisted = false
+            var shouldScheduleSync = false
             try {
                 notificationSyncLedgerDao.insert(ledgerEntry)
                 ledgerPersisted = true
+                shouldScheduleSync = true
                 process(ledgerEntry)
                 
                 try {
                     FinanzAppWidget().updateAll(context)
                 } catch (widgetError: Throwable) {
-                    widgetError.printStackTrace()
+                    SecureLog.w("TransactionProcessor", "Widget update failed after notification processing.", widgetError)
                 }
             } catch (error: Throwable) {
                 if (ledgerPersisted) {
@@ -119,18 +124,22 @@ class TransactionProcessor @Inject constructor(
                         )
                     )
                 }
+            } finally {
+                if (shouldScheduleSync) {
+                    cloudSyncScheduler.syncSoon()
+                }
             }
         }
     }
 
     private suspend fun process(ledgerEntry: NotificationSyncLedgerEntity) {
-        android.util.Log.d(
+        SecureLog.d(
             "TransactionProcessor",
             "Processing notification: package=${ledgerEntry.packageName}, textLength=${ledgerEntry.text.length}"
         )
 
         if (ledgerEntry.title.isBlank() && ledgerEntry.text.isBlank()) {
-            android.util.Log.d("TransactionProcessor", "Processing ignored: empty_notification")
+            SecureLog.d("TransactionProcessor", "Processing ignored: empty_notification")
             notificationSyncLedgerDao.update(
                 ledgerEntry.withStatus(
                     status = NotificationProcessingStatus.IGNORED,
@@ -142,7 +151,7 @@ class TransactionProcessor @Inject constructor(
 
         val parsedResult = parseNotification(ledgerEntry)
         if (parsedResult == null) {
-            android.util.Log.d("TransactionProcessor", "Processing ignored: no_transaction_detected")
+            SecureLog.d("TransactionProcessor", "Processing ignored: no_transaction_detected")
             notificationSyncLedgerDao.update(
                 ledgerEntry.withStatus(
                     status = NotificationProcessingStatus.IGNORED,
@@ -153,7 +162,10 @@ class TransactionProcessor @Inject constructor(
         }
 
         val transaction = parsedResult.transaction
-        android.util.Log.d("TransactionProcessor", "Parsed successfully: type=${transaction.type}, amount=${transaction.amount}, merchant='${transaction.merchant}', source=${transaction.source}, classifierSource=${parsedResult.classifierSource}")
+        SecureLog.d(
+            "TransactionProcessor",
+            "Parsed successfully: type=${transaction.type}, source=${transaction.source}, classifierSource=${parsedResult.classifierSource}"
+        )
         
         val fullMessage = "${ledgerEntry.title} ${ledgerEntry.text}"
 
@@ -288,26 +300,26 @@ class TransactionProcessor @Inject constructor(
     private suspend fun parseWithCustomRules(title: String, text: String): ParsedTransaction? {
         val customRules = customRuleDao.getAll()
         val fullMessage = "$title $text"
-        android.util.Log.d("TransactionProcessor", "Evaluating custom rules. Count: ${customRules.size}")
+        SecureLog.d("TransactionProcessor", "Evaluating custom rules. Count: ${customRules.size}")
 
         for (rule in customRules) {
-            android.util.Log.d("TransactionProcessor", "Evaluating rule '${rule.name}'")
+            SecureLog.d("TransactionProcessor", "Evaluating rule '${rule.name}'")
             val regex = compileCustomRuleRegex(rule.regexPattern)
             if (regex == null) {
-                android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' has invalid regex pattern")
+                SecureLog.d("TransactionProcessor", "Rule '${rule.name}' has invalid regex pattern")
                 continue
             }
             val matchResult = regex.find(fullMessage)
             if (matchResult == null) {
-                android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' pattern did not match message")
+                SecureLog.d("TransactionProcessor", "Rule '${rule.name}' pattern did not match message")
                 continue
             }
             val amountGroup = matchResult.groups["amount"]
             if (amountGroup == null) {
-                android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' matched, but group 'amount' was not captured")
+                SecureLog.d("TransactionProcessor", "Rule '${rule.name}' matched, but group 'amount' was not captured")
                 continue
             }
-            android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' matched")
+            SecureLog.d("TransactionProcessor", "Rule '${rule.name}' matched")
 
             val amount = when (rule.amountFormatType) {
                 0 -> parseLatAmAmount(amountGroup.value)
@@ -316,7 +328,7 @@ class TransactionProcessor @Inject constructor(
                 else -> ParserUtils.parseAmount(amountGroup.value)
             }
             if (amount == null) {
-                android.util.Log.d("TransactionProcessor", "Rule '${rule.name}' failed to parse amount '${amountGroup.value}' using format type ${rule.amountFormatType}")
+                SecureLog.d("TransactionProcessor", "Rule '${rule.name}' failed to parse amount '${amountGroup.value}' using format type ${rule.amountFormatType}")
                 continue
             }
 

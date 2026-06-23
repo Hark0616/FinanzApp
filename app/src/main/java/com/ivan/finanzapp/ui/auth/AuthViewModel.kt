@@ -2,7 +2,9 @@ package com.ivan.finanzapp.ui.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.data.remote.SupabaseAuthManager
+import com.ivan.finanzapp.data.remote.SupabaseSyncManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,7 +15,9 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
-    private val authManager: SupabaseAuthManager
+    private val authManager: SupabaseAuthManager,
+    private val syncManager: SupabaseSyncManager,
+    private val cloudSyncScheduler: CloudSyncScheduler
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -28,11 +32,19 @@ class AuthViewModel @Inject constructor(
     }
 
     fun toggleMode() {
-        _uiState.update { it.copy(isLoginMode = !it.isLoginMode, errorMessage = null, successMessage = null) }
+        _uiState.update {
+            it.copy(
+                isLoginMode = !it.isLoginMode,
+                loadingMessage = null,
+                errorMessage = null,
+                successMessage = null,
+                canContinueAfterSyncError = false
+            )
+        }
     }
 
     fun clearMessages() {
-        _uiState.update { it.copy(errorMessage = null, successMessage = null) }
+        _uiState.update { it.copy(errorMessage = null, successMessage = null, canContinueAfterSyncError = false) }
     }
 
     fun onSubmit(onSuccess: () -> Unit) {
@@ -50,20 +62,28 @@ class AuthViewModel @Inject constructor(
             return
         }
 
-        _uiState.update { it.copy(isLoading = true, errorMessage = null, successMessage = null) }
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                loadingMessage = if (currentState.isLoginMode) "Verificando tus credenciales..." else "Creando tu cuenta...",
+                errorMessage = null,
+                successMessage = null,
+                canContinueAfterSyncError = false
+            )
+        }
 
         viewModelScope.launch {
             if (currentState.isLoginMode) {
                 // Iniciar Sesión
                 authManager.signIn(email, password)
                     .onSuccess {
-                        _uiState.update { it.copy(isLoading = false, successMessage = "¡Sesión iniciada con éxito!") }
-                        onSuccess()
+                        restoreBackupAfterLogin(onSuccess)
                     }
                     .onFailure { error ->
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
+                                loadingMessage = null,
                                 errorMessage = translateAuthError(error.message ?: "Error desconocido")
                             )
                         }
@@ -75,6 +95,7 @@ class AuthViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
+                                loadingMessage = null,
                                 successMessage = "¡Registro exitoso! Por favor verifica tu correo si es necesario o inicia sesión."
                             )
                         }
@@ -85,6 +106,7 @@ class AuthViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
+                                loadingMessage = null,
                                 errorMessage = translateAuthError(error.message ?: "Error al registrarse.")
                             )
                         }
@@ -93,18 +115,26 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    fun onGoogleSignInSuccess(idToken: String, onSuccess: () -> Unit) {
-        _uiState.update { it.copy(isLoading = true, errorMessage = null, successMessage = null) }
+    fun onGoogleSignInSuccess(idToken: String, nonce: String, onSuccess: () -> Unit) {
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                loadingMessage = "Validando tu cuenta de Google...",
+                errorMessage = null,
+                successMessage = null,
+                canContinueAfterSyncError = false
+            )
+        }
         viewModelScope.launch {
-            authManager.signInWithGoogle(idToken)
+            authManager.signInWithGoogle(idToken, nonce)
                 .onSuccess {
-                    _uiState.update { it.copy(isLoading = false, successMessage = "¡Sesión iniciada con Google!") }
-                    onSuccess()
+                    restoreBackupAfterLogin(onSuccess)
                 }
                 .onFailure { error ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            loadingMessage = null,
                             errorMessage = translateAuthError(error.message ?: "Error al iniciar sesión con Google.")
                         )
                     }
@@ -113,11 +143,61 @@ class AuthViewModel @Inject constructor(
     }
 
     fun onGoogleSignInError(message: String) {
-        _uiState.update { it.copy(isLoading = false, errorMessage = message) }
+        _uiState.update { it.copy(isLoading = false, loadingMessage = null, errorMessage = message) }
     }
 
     fun startGoogleSignInLoading() {
-        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                loadingMessage = "Abriendo selector de cuenta...",
+                errorMessage = null,
+                canContinueAfterSyncError = false
+            )
+        }
+    }
+
+    fun continueAfterSyncError(onSuccess: () -> Unit) {
+        _uiState.update { it.copy(canContinueAfterSyncError = false, errorMessage = null) }
+        onSuccess()
+    }
+
+    private suspend fun restoreBackupAfterLogin(onSuccess: () -> Unit) {
+        _uiState.update {
+            it.copy(
+                loadingMessage = "Restaurando tu copia de seguridad...",
+                errorMessage = null,
+                successMessage = null
+            )
+        }
+        syncManager.sync()
+            .onSuccess { summary ->
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        loadingMessage = null,
+                        successMessage = if (summary.remoteDeletes > 0) {
+                            "Copia sincronizada. Se aplicaron ${summary.remoteDeletes} borrados reales y el respaldo quedó activo."
+                        } else if (summary.totalRowsTouched > 0) {
+                            "Copia sincronizada. Tus datos locales y la nube quedaron alineados."
+                        } else {
+                            "Sesión iniciada. Tu copia ya está al día."
+                        }
+                    )
+                }
+                onSuccess()
+            }
+            .onFailure { error ->
+                cloudSyncScheduler.syncSoon()
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        loadingMessage = null,
+                        canContinueAfterSyncError = true,
+                        errorMessage = "Tu sesión quedó iniciada, pero no pude restaurar la copia ahora: ${translateAuthError(error.message ?: "Error desconocido")}"
+                    )
+                }
+            }
     }
 
     private fun translateAuthError(error: String): String {
@@ -127,6 +207,8 @@ class AuthViewModel @Inject constructor(
             error.contains("User already exists", ignoreCase = true) -> "Ya existe una cuenta con este correo electrónico."
             error.contains("Password should be", ignoreCase = true) -> "La contraseña es muy débil."
             error.contains("NetworkError", ignoreCase = true) -> "Error de conexión. Revisa tu internet."
+            error.contains("nonce", ignoreCase = true) -> "No pudimos validar la firma de Google. Revisa la configuración del proveedor Google en Supabase."
+            error.contains("provider", ignoreCase = true) -> "El proveedor de Google no parece estar habilitado o configurado en Supabase."
             else -> "Ocurrió un problema: $error"
         }
     }
@@ -136,7 +218,9 @@ data class AuthUiState(
     val email: String = "",
     val password: String = "",
     val isLoading: Boolean = false,
+    val loadingMessage: String? = null,
     val isLoginMode: Boolean = true,
     val errorMessage: String? = null,
-    val successMessage: String? = null
+    val successMessage: String? = null,
+    val canContinueAfterSyncError: Boolean = false
 )

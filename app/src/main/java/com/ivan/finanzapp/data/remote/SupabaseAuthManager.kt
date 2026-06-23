@@ -1,5 +1,9 @@
 package com.ivan.finanzapp.data.remote
 
+import android.content.Context
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.CredentialManager
+import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.providers.Google
@@ -14,7 +18,8 @@ import javax.inject.Singleton
 
 @Singleton
 class SupabaseAuthManager @Inject constructor(
-    private val supabaseClient: SupabaseClient
+    private val supabaseClient: SupabaseClient,
+    @ApplicationContext private val context: Context
 ) {
     private val authModule = supabaseClient.pluginManager.getPlugin(Auth)
 
@@ -69,11 +74,12 @@ class SupabaseAuthManager @Inject constructor(
     /**
      * Inicia sesión o se registra en Supabase utilizando un ID Token de Google obtenido localmente.
      */
-    suspend fun signInWithGoogle(googleIdToken: String): Result<Unit> {
+    suspend fun signInWithGoogle(googleIdToken: String, nonce: String? = null): Result<Unit> {
         return try {
             authModule.signInWith(IDToken) {
                 idToken = googleIdToken
                 provider = Google
+                nonce?.let { this.nonce = it }
             }
             Result.success(Unit)
         } catch (e: Exception) {
@@ -87,6 +93,7 @@ class SupabaseAuthManager @Inject constructor(
     suspend fun signOut(): Result<Unit> {
         return try {
             authModule.signOut()
+            CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

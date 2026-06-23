@@ -7,11 +7,13 @@ import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
+import com.ivan.finanzapp.data.security.SecureLog
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.model.TransactionType
 import android.content.Context
 import androidx.room.withTransaction
+import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import androidx.glance.appwidget.updateAll
 import com.ivan.finanzapp.ui.widget.FinanzAppWidget
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -25,7 +27,8 @@ class AddManualTransactionUseCase @Inject constructor(
     private val accountDao: AccountDao,
     private val creditCardDao: CreditCardDao,
     private val deferredPurchaseDao: DeferredPurchaseDao,
-    private val calculator: CreditCardCalculator
+    private val calculator: CreditCardCalculator,
+    private val cloudSyncScheduler: CloudSyncScheduler
 ) {
     suspend operator fun invoke(
         amount: Double,
@@ -79,8 +82,10 @@ class AddManualTransactionUseCase @Inject constructor(
         try {
             FinanzAppWidget().updateAll(context)
         } catch (e: Throwable) {
-            e.printStackTrace()
+            SecureLog.w("AddManualTransaction", "Widget update failed after manual transaction.", e)
         }
+
+        cloudSyncScheduler.syncSoon()
     }
 
     private suspend fun applyFinancialSideEffects(

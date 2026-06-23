@@ -2,8 +2,10 @@ package com.ivan.finanzapp.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ivan.finanzapp.BuildConfig
 import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.remote.LocalAiClassifier
+import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.CustomRuleDao
@@ -30,7 +32,8 @@ class SettingsViewModel @Inject constructor(
     private val customRuleDao: CustomRuleDao,
     private val localAiClassifier: LocalAiClassifier,
     private val authManager: com.ivan.finanzapp.data.remote.SupabaseAuthManager,
-    private val syncManager: com.ivan.finanzapp.data.remote.SupabaseSyncManager
+    private val syncManager: com.ivan.finanzapp.data.remote.SupabaseSyncManager,
+    private val cloudSyncScheduler: CloudSyncScheduler
 ) : ViewModel() {
 
     private val _isAddAccountDialogVisible = MutableStateFlow(false)
@@ -40,6 +43,10 @@ class SettingsViewModel @Inject constructor(
     private val _isLocalAiPrefChanged = MutableStateFlow(false)
     private val _processingModeChanged = MutableStateFlow(false)
     private val _isSyncing = MutableStateFlow(false)
+    private val _syncStatusMessage = MutableStateFlow<String?>(null)
+    private val _syncErrorMessage = MutableStateFlow<String?>(null)
+    private val _syncStateVersion = MutableStateFlow(0)
+    private val _appLockChanged = MutableStateFlow(false)
 
     val uiState: StateFlow<SettingsUiState> = combine(
         accountDao.observeAccounts(),
@@ -51,7 +58,11 @@ class SettingsViewModel @Inject constructor(
         _isSavedSuccess,
         _isLocalAiPrefChanged,
         _processingModeChanged,
-        _isSyncing
+        _isSyncing,
+        _syncStatusMessage,
+        _syncErrorMessage,
+        _syncStateVersion,
+        _appLockChanged
     ) { flows ->
         @Suppress("UNCHECKED_CAST")
         val accounts = flows[0] as List<AccountEntity>
@@ -63,6 +74,8 @@ class SettingsViewModel @Inject constructor(
         val isCustomRulesVisible = flows[5] as Boolean
         val isSavedSuccess = flows[6] as Boolean
         val isSyncing = flows[9] as Boolean
+        val syncStatusMessage = flows[10] as String?
+        val syncErrorMessage = flows[11] as String?
         val apiKey = securePrefs.getOpenRouterApiKey() ?: ""
         SettingsUiState(
             isLoading = false,
@@ -77,7 +90,12 @@ class SettingsViewModel @Inject constructor(
             isLocalAiEnabled = securePrefs.isLocalAiEnabled(),
             processingMode = securePrefs.getNotificationProcessingMode(),
             currentUserEmail = currentUser?.email,
-            isSyncing = isSyncing
+            isSyncing = isSyncing,
+            lastCloudSyncAt = securePrefs.getLastCloudSyncAt(),
+            syncStatusMessage = syncStatusMessage,
+            syncErrorMessage = syncErrorMessage,
+            isAppLockEnabled = securePrefs.isAppLockEnabled(),
+            isSecurityLabMode = BuildConfig.SECURITY_LAB_MODE
         )
     }.stateIn(
         scope = viewModelScope,
@@ -96,12 +114,14 @@ class SettingsViewModel @Inject constructor(
     fun saveCustomRule(rule: CustomRuleEntity) {
         viewModelScope.launch {
             customRuleDao.upsert(rule)
+            cloudSyncScheduler.syncSoon()
         }
     }
 
     fun deleteCustomRule(id: String) {
         viewModelScope.launch {
             customRuleDao.delete(id)
+            cloudSyncScheduler.syncSoon()
         }
     }
 
@@ -113,6 +133,11 @@ class SettingsViewModel @Inject constructor(
     fun setLocalAiEnabled(enabled: Boolean) {
         securePrefs.setLocalAiEnabled(enabled)
         _isLocalAiPrefChanged.update { !it }
+    }
+
+    fun setAppLockEnabled(enabled: Boolean) {
+        securePrefs.setAppLockEnabled(enabled)
+        _appLockChanged.update { !it }
     }
 
     fun saveApiKey(apiKey: String) {
@@ -173,12 +198,14 @@ class SettingsViewModel @Inject constructor(
                 creditCardDao.upsert(card)
             }
             toggleAddAccountDialog(false)
+            cloudSyncScheduler.syncSoon()
         }
     }
 
     fun deleteAccount(accountId: String) {
         viewModelScope.launch {
             accountDao.delete(accountId)
+            cloudSyncScheduler.syncSoon()
         }
     }
 
@@ -186,12 +213,23 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             if (_isSyncing.value) return@launch
             _isSyncing.value = true
+            _syncStatusMessage.value = null
+            _syncErrorMessage.value = null
             syncManager.sync()
-                .onSuccess {
-                    // Sincronización exitosa
+                .onSuccess { summary ->
+                    _syncStatusMessage.value = if (summary.totalRowsTouched > 0) {
+                        if (summary.remoteDeletes > 0) {
+                            "Copia actualizada. Se aplicaron ${summary.remoteDeletes} borrados reales y tus datos quedaron alineados."
+                        } else {
+                            "Copia actualizada. Tus datos locales y la nube quedaron alineados."
+                        }
+                    } else {
+                        "Tu copia ya estaba al día."
+                    }
+                    _syncStateVersion.update { it + 1 }
                 }
-                .onFailure {
-                    // Opcional: manejar error en UI
+                .onFailure { error ->
+                    _syncErrorMessage.value = error.message ?: "No se pudo sincronizar. Revisa tu conexión."
                 }
             _isSyncing.value = false
         }
@@ -200,6 +238,8 @@ class SettingsViewModel @Inject constructor(
     fun signOut() {
         viewModelScope.launch {
             authManager.signOut()
+            _syncStatusMessage.value = null
+            _syncErrorMessage.value = null
         }
     }
 }

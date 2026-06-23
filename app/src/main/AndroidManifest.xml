@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Permiso para acceder a notificaciones de otras apps -->
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
-        tools:ignore="ProtectedPermissions"
-        xmlns:tools="http://schemas.android.com/tools" />
+        tools:ignore="ProtectedPermissions" />
 
     <!-- Internet para fallback de IA (OpenRouter) y backup opcional -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -17,12 +17,26 @@
 
     <application
         android:name=".FinanzApplication"
-        android:allowBackup="true"
+        android:allowBackup="${appAllowBackup}"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.FinanzApp">
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
 
         <activity
             android:name=".MainActivity"
@@ -98,7 +112,7 @@
         <!-- Receiver para simular notificaciones bancarias en pruebas locales -->
         <receiver
             android:name=".data.notification.NotificationSimulatorReceiver"
-            android:exported="true"
+            android:exported="${debugToolsExported}"
             android:permission="android.permission.DUMP">
             <intent-filter>
                 <action android:name="com.ivan.finanzapp.SIMULATE_NOTIFICATION" />
@@ -116,6 +130,45 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/app_widget_info" />
+        </receiver>
+
+        <!-- Receiver para el Widget de Autonomía -->
+        <receiver
+            android:name=".ui.widget.AutonomiaWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_autonomia_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/autonomia_widget_info" />
+        </receiver>
+
+        <!-- Receiver para el Widget de Próximo Vencimiento -->
+        <receiver
+            android:name=".ui.widget.ProximoVencimientoWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_vencimiento_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/proximo_vencimiento_widget_info" />
+        </receiver>
+
+        <!-- Receiver para el Widget de Disponible Neto -->
+        <receiver
+            android:name=".ui.widget.DisponibleNetoWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_disponible_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/disponible_neto_widget_info" />
         </receiver>
 
     </application>

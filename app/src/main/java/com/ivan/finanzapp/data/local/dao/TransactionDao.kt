@@ -55,15 +55,19 @@ interface TransactionDao {
     suspend fun delete(id: String)
 
     /**
-     * Suma de gastos (GASTO y GASTO_TC) agrupados por categoría,
+     * Suma de gastos de consumo (GASTO y GASTO_TC) agrupados por categoría,
      * dentro del rango [startMillis, endMillis). Usado para el gráfico
      * de "Gastos del mes por categoría" del Dashboard.
+     *
+     * TRANSFERENCIA no se incluye aquí porque representa movimiento de dinero
+     * entre cuentas/personas y puede duplicar presupuesto si el destino también
+     * queda registrado. El saldo sí se ajusta en el procesador transaccional.
      */
     @Query(
         """
         SELECT categoryId, SUM(amount) as total
         FROM transactions
-        WHERE type IN ('GASTO', 'GASTO_TC', 'TRANSFERENCIA')
+        WHERE type IN ('GASTO', 'GASTO_TC')
           AND timestamp >= :startMillis AND timestamp < :endMillis
         GROUP BY categoryId
         ORDER BY total DESC
@@ -82,4 +86,7 @@ interface TransactionDao {
 
     @Query("SELECT * FROM transactions")
     suspend fun getAllSnapshot(): List<TransactionEntity>
+
+    @Query("SELECT * FROM transactions WHERE timestamp >= :startMillis AND timestamp < :endMillis")
+    suspend fun getByDateRangeSnapshot(startMillis: Long, endMillis: Long): List<TransactionEntity>
 }

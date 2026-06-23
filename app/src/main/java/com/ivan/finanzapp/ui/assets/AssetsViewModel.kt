@@ -6,6 +6,7 @@ import com.ivan.finanzapp.data.local.dao.*
 import com.ivan.finanzapp.data.local.entity.AssetEntity
 import com.ivan.finanzapp.data.local.entity.AssetType
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
+import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.dashboard.TransactionWithCategory
@@ -48,7 +49,8 @@ class AssetsViewModel @Inject constructor(
     private val loanDao: LoanDao,
     private val creditCardDao: CreditCardDao,
     private val deferredPurchaseDao: DeferredPurchaseDao,
-    private val calculator: CreditCardCalculator
+    private val calculator: CreditCardCalculator,
+    private val cloudSyncScheduler: CloudSyncScheduler
 ) : ViewModel() {
 
     val uiState: StateFlow<BalanceUiState> = combine(
@@ -132,6 +134,7 @@ class AssetsViewModel @Inject constructor(
                 type = type
             )
             assetDao.upsert(asset)
+            cloudSyncScheduler.syncSoon()
         }
     }
 
@@ -144,12 +147,14 @@ class AssetsViewModel @Inject constructor(
                 type = type
             )
             assetDao.upsert(asset)
+            cloudSyncScheduler.syncSoon()
         }
     }
 
     fun deleteAsset(id: String) {
         viewModelScope.launch {
             assetDao.delete(id)
+            cloudSyncScheduler.syncSoon()
         }
     }
 
@@ -175,6 +180,7 @@ class AssetsViewModel @Inject constructor(
             )
             transactionDao.insertIfNotExists(transaction)
             accountDao.adjustBalance(accountId, +amount)
+            cloudSyncScheduler.syncSoon()
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.ivan.finanzapp.di
 
+import com.ivan.finanzapp.BuildConfig
 import com.ivan.finanzapp.data.remote.OpenRouterApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -49,7 +50,13 @@ object NetworkModule {
         OkHttpClient.Builder()
             .addInterceptor(
                 HttpLoggingInterceptor().apply {
-                    level = HttpLoggingInterceptor.Level.BODY
+                    redactHeader("Authorization")
+                    redactHeader("X-API-Key")
+                    level = if (BuildConfig.SENSITIVE_LOGGING_ENABLED) {
+                        HttpLoggingInterceptor.Level.BODY
+                    } else {
+                        HttpLoggingInterceptor.Level.NONE
+                    }
                 }
             )
             .build()

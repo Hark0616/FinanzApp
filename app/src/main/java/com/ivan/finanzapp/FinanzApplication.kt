@@ -1,9 +1,12 @@
 package com.ivan.finanzapp
 
 import android.app.Application
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import com.ivan.finanzapp.data.local.DefaultCategories
 import com.ivan.finanzapp.data.local.dao.AssetDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
+import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +23,7 @@ import javax.inject.Inject
  *    vez que se instala la app (si la tabla está vacía).
  */
 @HiltAndroidApp
-class FinanzApplication : Application() {
+class FinanzApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var categoryDao: CategoryDao
@@ -28,12 +31,24 @@ class FinanzApplication : Application() {
     @Inject
     lateinit var assetDao: AssetDao
 
+    @Inject
+    lateinit var cloudSyncScheduler: CloudSyncScheduler
+
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
 
     override fun onCreate() {
         super.onCreate()
         seedDefaultCategoriesIfNeeded()
         cleanLegacySueldoAssets()
+        cloudSyncScheduler.schedulePeriodicSync()
     }
 
     /**

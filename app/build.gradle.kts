@@ -19,11 +19,25 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["appAllowBackup"] = "false"
+        manifestPlaceholders["debugToolsExported"] = "false"
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "SECURITY_LAB_MODE", "true")
+            buildConfigField("boolean", "SENSITIVE_LOGGING_ENABLED", "true")
+            manifestPlaceholders["appAllowBackup"] = "true"
+            manifestPlaceholders["debugToolsExported"] = "true"
+        }
+
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            buildConfigField("boolean", "SECURITY_LAB_MODE", "false")
+            buildConfigField("boolean", "SENSITIVE_LOGGING_ENABLED", "false")
+            manifestPlaceholders["appAllowBackup"] = "false"
+            manifestPlaceholders["debugToolsExported"] = "false"
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -38,6 +52,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     // ↓ composeOptions con kotlinCompilerExtensionVersion se ELIMINA
@@ -101,11 +116,12 @@ dependencies {
 
     // Seguridad (EncryptedSharedPreferences para guardar API key)
     implementation("androidx.security:security-crypto:1.1.0")
+    implementation("androidx.biometric:biometric:1.1.0")
 
     // Credential Manager for Google Sign-In
-    implementation("androidx.credentials:credentials:1.3.0")
-    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
-    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.2.0")
 
     // Supabase
     implementation(platform("io.github.jan-tennert.supabase:bom:3.6.0"))

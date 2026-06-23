@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ivan.finanzapp.data.local.entity.AccountEntity
+import com.ivan.finanzapp.data.security.SecureLog
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.theme.FinanzAppTheme
@@ -45,7 +46,9 @@ class QuickAddActivity : ComponentActivity() {
         if (Intent.ACTION_VIEW == action && data != null) {
             initialAmount = data.getQueryParameter("amount") ?: ""
             initialMerchant = data.getQueryParameter("merchant") ?: ""
-            isVoiceAction = data.getQueryParameter("voice") == "true"
+            // External deep links may prefill the form, but financial writes
+            // must still be confirmed by the user inside the app.
+            isVoiceAction = false
         }
         
         setContent {
@@ -105,7 +108,10 @@ fun QuickAddScreen(
         val isDataReady = amount > 0.0 && merchant.isNotBlank()
         
         LaunchedEffect(amount, merchant, accounts, categories, isDataReady) {
-            android.util.Log.d("QuickAddScreen", "amount: $amount, merchant: '$merchant', accounts.size: ${accounts.size}, isDataReady: $isDataReady")
+            SecureLog.d(
+                "QuickAddScreen",
+                "Voice transaction readiness: hasAmount=${amount > 0.0}, hasMerchant=${merchant.isNotBlank()}, accounts.size=${accounts.size}, isDataReady=$isDataReady"
+            )
             if (isDataReady) {
                 // Si las cuentas están vacías al inicio, damos un margen de 100ms para que Room cargue el flujo.
                 // Si tras 100ms sigue vacío, significa que el usuario no tiene cuentas creadas y guardamos sin cuenta (Pendiente).
@@ -115,7 +121,10 @@ fun QuickAddScreen(
                 
                 val defaultAccountId = accounts.preferredManualDefaultAccountId()
                 val defaultCategoryId = categories.find { it.isDefault }?.id ?: categories.firstOrNull()?.id
-                android.util.Log.d("QuickAddScreen", "Saving voice transaction. AccountId: $defaultAccountId, CategoryId: $defaultCategoryId")
+                SecureLog.d(
+                    "QuickAddScreen",
+                    "Saving voice transaction with defaultAccount=${defaultAccountId != null}, defaultCategory=${defaultCategoryId != null}"
+                )
                 
                 viewModel.saveTransaction(
                     amount = amount,

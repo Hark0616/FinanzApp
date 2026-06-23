@@ -8,8 +8,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -27,14 +29,20 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.CustomCredential
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import com.ivan.finanzapp.R
+import com.ivan.finanzapp.data.security.SecureLog
 import kotlinx.coroutines.launch
+
+private const val AUTH_TAG = "AuthScreen"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,7 +56,7 @@ fun AuthScreen(
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val webClientId = context.getString(R.string.google_web_client_id)
+    val webClientId = stringResource(R.string.google_web_client_id)
     val isPlaceholder = webClientId == "YOUR_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com"
 
     val triggerGoogleSignIn = {
@@ -59,10 +67,9 @@ fun AuthScreen(
             coroutineScope.launch {
                 try {
                     val credentialManager = CredentialManager.create(context)
-                    val googleIdOption = GetGoogleIdOption.Builder()
-                        .setFilterByAuthorizedAccounts(false)
-                        .setServerClientId(webClientId)
-                        .setAutoSelectEnabled(false)
+                    val nonce = GoogleAuthNonceGenerator.create()
+                    val googleIdOption = GetSignInWithGoogleOption.Builder(webClientId)
+                        .setNonce(nonce.hashed)
                         .build()
 
                     val request = GetCredentialRequest.Builder()
@@ -75,17 +82,21 @@ fun AuthScreen(
                     if (credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                         val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
                         val idToken = googleIdTokenCredential.idToken
-                        viewModel.onGoogleSignInSuccess(idToken, onAuthSuccess)
+                        viewModel.onGoogleSignInSuccess(idToken, nonce.raw, onAuthSuccess)
                     } else {
                         viewModel.onGoogleSignInError("Tipo de credencial no soportado.")
                     }
+                } catch (e: GoogleIdTokenParsingException) {
+                    SecureLog.w(AUTH_TAG, "Google returned an invalid ID token credential.", e)
+                    viewModel.onGoogleSignInError("Google devolvió una credencial inválida. Actualiza Google Play Services e inténtalo de nuevo.")
+                } catch (e: GetCredentialCancellationException) {
+                    SecureLog.i(AUTH_TAG, "Google sign-in selector was closed before an account was selected.", e)
+                    viewModel.onGoogleSignInError(googleCancellationMessage(e))
                 } catch (e: GetCredentialException) {
-                    val errorMessage = when (e.type) {
-                        GetCredentialException.TYPE_USER_CANCELED -> "Inicio de sesión cancelado."
-                        else -> "Error de autenticación con Google: ${e.message}"
-                    }
-                    viewModel.onGoogleSignInError(errorMessage)
+                    SecureLog.w(AUTH_TAG, "Google credential request failed.", e)
+                    viewModel.onGoogleSignInError("Error de autenticación con Google: ${e.message}")
                 } catch (e: Exception) {
+                    SecureLog.e(AUTH_TAG, "Unexpected Google sign-in error.", e)
                     viewModel.onGoogleSignInError("Error inesperado: ${e.localizedMessage}")
                 }
             }
@@ -125,8 +136,8 @@ fun AuthScreen(
             // Auth Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(
@@ -149,6 +160,56 @@ fun AuthScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
+
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudDone,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Al iniciar sesión se restaura tu copia de Supabase y se activa el respaldo periódico.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(visible = isPlaceholder) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Security,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Falta configurar el Web Client ID de Google para habilitar el acceso con Google.",
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -210,6 +271,16 @@ fun AuthScreen(
                         }
                     }
 
+                    AnimatedVisibility(visible = state.canContinueAfterSyncError) {
+                        OutlinedButton(
+                            onClick = { viewModel.continueAfterSyncError(onAuthSuccess) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Continuar y sincronizar después")
+                        }
+                    }
+
                     // Success Message Display
                     AnimatedVisibility(visible = state.successMessage != null) {
                         state.successMessage?.let { success ->
@@ -243,11 +314,19 @@ fun AuthScreen(
                         enabled = !state.isLoading
                     ) {
                         if (state.isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = state.loadingMessage ?: "Procesando...",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         } else {
                             Text(
                                 text = if (state.isLoginMode) "Ingresar" else "Registrarme",
@@ -338,5 +417,14 @@ fun AuthScreen(
                 }
             }
         }
+    }
+}
+
+private fun googleCancellationMessage(error: GetCredentialCancellationException): String {
+    val message = error.message.orEmpty()
+    return if (message.contains("Account reauth failed", ignoreCase = true)) {
+        "Google no pudo validar esta cuenta con este APK. Crea en Google Cloud un cliente OAuth tipo Android para com.ivan.finanzapp con el SHA-1 de debug y vuelve a intentar."
+    } else {
+        "Se cerró el selector de Google. Elige una cuenta para continuar con el respaldo."
     }
 }
