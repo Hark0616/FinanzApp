@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +24,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.CategoryEntity
+import com.ivan.finanzapp.data.local.entity.PaymentMatchSuggestionEntity
+import com.ivan.finanzapp.data.local.entity.PaymentMatchTargetType
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.components.AmountText
 import com.ivan.finanzapp.ui.components.CategoryChip
@@ -56,15 +59,21 @@ fun TransactionsScreen(
 
     var addTransactionDialogVisible by remember { mutableStateOf(action == "add_expense") }
 
-    val filteredTransactions = remember(state.transactions, searchQuery, activeFilter) {
+    val filteredTransactions = remember(
+        state.transactions,
+        state.pendingPaymentSuggestions,
+        searchQuery,
+        activeFilter
+    ) {
         state.transactions.filter { item ->
             val matchesSearch = item.transaction.merchant?.contains(searchQuery, ignoreCase = true) == true ||
                     item.category?.name?.contains(searchQuery, ignoreCase = true) == true ||
                     item.accountName?.contains(searchQuery, ignoreCase = true) == true
+            val hasPaymentSuggestion = state.pendingPaymentSuggestions[item.transaction.id].orEmpty().isNotEmpty()
 
             val matchesFilter = when (activeFilter) {
                 TransactionFilter.ALL -> true
-                TransactionFilter.PENDING_REVIEW -> item.transaction.needsReview
+                TransactionFilter.PENDING_REVIEW -> item.transaction.needsReview || hasPaymentSuggestion
                 TransactionFilter.UNCLASSIFIED -> item.transaction.accountId == null
             }
             matchesSearch && matchesFilter
@@ -141,7 +150,7 @@ fun TransactionsScreen(
                         leadingIcon = if (activeFilter == TransactionFilter.UNCLASSIFIED) {
                             { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                         } else {
-                            { Icon(Icons.Default.HelpOutline, null, modifier = Modifier.size(16.dp)) }
+                            { Icon(Icons.AutoMirrored.Filled.HelpOutline, null, modifier = Modifier.size(16.dp)) }
                         }
                     )
                 }
@@ -179,13 +188,16 @@ fun TransactionsScreen(
                     items(filteredTransactions, key = { it.transaction.id }) { item ->
                         TransactionItemRow(
                             item = item,
+                            paymentSuggestions = state.pendingPaymentSuggestions[item.transaction.id].orEmpty(),
                             onClick = {
                                 selectedTransactionForEdit = item
                                 categoryDialogExpanded = true
                             },
                             onConfirmClick = {
                                 viewModel.confirmTransaction(item.transaction.id)
-                            }
+                            },
+                            onApplyPaymentSuggestion = viewModel::acceptPaymentSuggestion,
+                            onRejectPaymentSuggestion = viewModel::rejectPaymentSuggestion
                         )
                     }
                 }
@@ -550,8 +562,11 @@ fun AddTransactionDialog(
 @Composable
 private fun TransactionItemRow(
     item: TransactionWithCategory,
+    paymentSuggestions: List<PaymentMatchSuggestionEntity>,
     onClick: () -> Unit,
-    onConfirmClick: () -> Unit
+    onConfirmClick: () -> Unit,
+    onApplyPaymentSuggestion: (String) -> Unit,
+    onRejectPaymentSuggestion: (String) -> Unit
 ) {
     val isIncome = item.transaction.type == TransactionType.INGRESO || item.transaction.type == TransactionType.PAGO_TC
     val date = Instant.ofEpochMilli(item.transaction.timestamp)
@@ -620,7 +635,7 @@ private fun TransactionItemRow(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.HelpOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                    Icon(Icons.AutoMirrored.Filled.HelpOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
                         "Pendiente por clasificar (Sin Cuenta)",
@@ -668,6 +683,106 @@ private fun TransactionItemRow(
                 }
             }
         }
+
+        if (paymentSuggestions.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            PaymentSuggestionBlock(
+                suggestions = paymentSuggestions,
+                onApply = onApplyPaymentSuggestion,
+                onIgnore = onRejectPaymentSuggestion
+            )
+        }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+}
+
+@Composable
+private fun PaymentSuggestionBlock(
+    suggestions: List<PaymentMatchSuggestionEntity>,
+    onApply: (String) -> Unit,
+    onIgnore: (String) -> Unit
+) {
+    val suggestion = suggestions.maxByOrNull { it.confidence } ?: return
+    val targetLabel = when (suggestion.targetType) {
+        PaymentMatchTargetType.CREDIT_CARD -> "tarjeta"
+        PaymentMatchTargetType.LOAN -> "crédito"
+    }
+    val confidenceLabel = when {
+        suggestion.confidence >= 0.94 -> "Coincidencia alta"
+        suggestion.confidence >= 0.86 -> "Coincidencia media"
+        else -> "Revisar coincidencia"
+    }
+    val differenceLabel = if (suggestion.differenceAmount < 1.0) {
+        "diferencia $0"
+    } else {
+        "diferencia ${formatCOP(suggestion.differenceAmount)}"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = when (suggestion.targetType) {
+                    PaymentMatchTargetType.CREDIT_CARD -> Icons.Default.CreditCard
+                    PaymentMatchTargetType.LOAN -> Icons.Default.AccountBalance
+                },
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Conciliación sugerida",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "Posible pago de $targetLabel: ${suggestion.targetName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        Text(
+            "$confidenceLabel · $differenceLabel · esperado ${formatCOP(suggestion.expectedAmount)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
+        )
+        Text(
+            suggestion.reason,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(
+                onClick = { onIgnore(suggestion.id) },
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text("Ignorar", fontSize = 12.sp)
+            }
+            Spacer(Modifier.width(4.dp))
+            Button(
+                onClick = { onApply(suggestion.id) },
+                shape = RoundedCornerShape(6.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier.height(30.dp)
+            ) {
+                Text("Aplicar", fontSize = 12.sp)
+            }
+        }
+    }
 }

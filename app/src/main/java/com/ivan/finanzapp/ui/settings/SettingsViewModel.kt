@@ -80,13 +80,13 @@ class SettingsViewModel @Inject constructor(
         val apiKey = securePrefs.getOpenRouterApiKey() ?: ""
         @Suppress("UNCHECKED_CAST")
         val creditCards = flows[14] as List<CreditCardEntity>
-        val creditCardDebts = creditCards.associate { it.accountId to it.currentDebt }
+        val creditCardsMap = creditCards.associateBy { it.accountId }
 
         SettingsUiState(
             isLoading = false,
             apiKey = apiKey,
             accounts = accounts,
-            creditCardDebts = creditCardDebts,
+            creditCardsMap = creditCardsMap,
             customRules = customRules,
             isAddAccountDialogVisible = isAddDialogVisible,
             isProcessingDialogVisible = isProcDialogVisible,
@@ -211,6 +211,22 @@ class SettingsViewModel @Inject constructor(
     fun deleteAccount(accountId: String) {
         viewModelScope.launch {
             accountDao.delete(accountId)
+            cloudSyncScheduler.syncSoon()
+        }
+    }
+
+    fun updateAccountBalance(accountId: String, newBalance: Double) {
+        viewModelScope.launch {
+            val account = accountDao.getAccountById(accountId) ?: return@launch
+            accountDao.upsert(account.copy(currentBalance = newBalance, isManualBalance = true))
+            cloudSyncScheduler.syncSoon()
+        }
+    }
+
+    fun updateCreditCardDetails(accountId: String, limit: Double, debt: Double) {
+        viewModelScope.launch {
+            val card = creditCardDao.getByAccountId(accountId) ?: return@launch
+            creditCardDao.upsert(card.copy(creditLimit = limit, currentDebt = debt))
             cloudSyncScheduler.syncSoon()
         }
     }

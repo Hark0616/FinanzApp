@@ -472,3 +472,107 @@ fun NotificationSyncLedgerDto.toEntity(): NotificationSyncLedgerEntity = Notific
     processedAtMillis = processedAtMillis,
     updatedAtMillis = updatedAtMillis
 )
+
+@Serializable
+data class PaymentMatchSuggestionDto(
+    val id: String,
+    val sourceTransactionId: String,
+    val targetType: String,
+    val targetId: String,
+    val targetName: String,
+    val expectedAmount: Double,
+    val actualAmount: Double,
+    val differenceAmount: Double,
+    val confidence: Double,
+    val reason: String,
+    val status: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val expiresAt: Long? = null,
+    val acceptedApplicationId: String? = null,
+    val user_id: String? = null
+)
+
+fun PaymentMatchSuggestionEntity.toDto(): PaymentMatchSuggestionDto = PaymentMatchSuggestionDto(
+    id = id,
+    sourceTransactionId = sourceTransactionId,
+    targetType = targetType.name,
+    targetId = targetId,
+    targetName = targetName,
+    expectedAmount = expectedAmount,
+    actualAmount = actualAmount,
+    differenceAmount = differenceAmount,
+    confidence = confidence,
+    reason = reason,
+    status = status.name,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+    expiresAt = expiresAt,
+    acceptedApplicationId = acceptedApplicationId
+)
+
+fun PaymentMatchSuggestionDto.toEntity(): PaymentMatchSuggestionEntity = PaymentMatchSuggestionEntity(
+    id = id,
+    sourceTransactionId = sourceTransactionId,
+    targetType = PaymentMatchTargetType.entries.firstOrNull { it.name == targetType }
+        ?: PaymentMatchTargetType.CREDIT_CARD,
+    targetId = targetId,
+    targetName = targetName,
+    expectedAmount = expectedAmount,
+    actualAmount = actualAmount,
+    differenceAmount = differenceAmount,
+    confidence = confidence,
+    reason = reason,
+    status = PaymentMatchStatus.entries.firstOrNull { it.name == status }
+        ?: PaymentMatchStatus.PENDING,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+    expiresAt = expiresAt,
+    acceptedApplicationId = acceptedApplicationId
+)
+
+@Serializable
+data class DebtPaymentApplicationDto(
+    val id: String,
+    val sourceTransactionId: String,
+    val suggestionId: String? = null,
+    val targetType: String,
+    val targetId: String,
+    val targetName: String,
+    val amount: Double,
+    val expectedAmount: Double,
+    val differenceAmount: Double,
+    val applicationType: String,
+    val appliedAt: Long,
+    val user_id: String? = null
+)
+
+fun DebtPaymentApplicationEntity.toDto(): DebtPaymentApplicationDto = DebtPaymentApplicationDto(
+    id = id,
+    sourceTransactionId = sourceTransactionId,
+    suggestionId = suggestionId,
+    targetType = targetType.name,
+    targetId = targetId,
+    targetName = targetName,
+    amount = amount,
+    expectedAmount = expectedAmount,
+    differenceAmount = differenceAmount,
+    applicationType = applicationType.name,
+    appliedAt = appliedAt
+)
+
+fun DebtPaymentApplicationDto.toEntity(): DebtPaymentApplicationEntity = DebtPaymentApplicationEntity(
+    id = id,
+    sourceTransactionId = sourceTransactionId,
+    suggestionId = suggestionId,
+    targetType = PaymentMatchTargetType.entries.firstOrNull { it.name == targetType }
+        ?: PaymentMatchTargetType.CREDIT_CARD,
+    targetId = targetId,
+    targetName = targetName,
+    amount = amount,
+    expectedAmount = expectedAmount,
+    differenceAmount = differenceAmount,
+    applicationType = DebtPaymentApplicationType.entries.firstOrNull { it.name == applicationType }
+        ?: DebtPaymentApplicationType.CARD_EXTRA_PAYMENT,
+    appliedAt = appliedAt
+)

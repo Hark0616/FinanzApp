@@ -6,15 +6,18 @@ import androidx.room.withTransaction
 import com.ivan.finanzapp.data.local.AppDatabase
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
-import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
+import com.ivan.finanzapp.data.local.dao.PaymentMatchSuggestionDao
+import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
+import com.ivan.finanzapp.data.local.entity.PaymentMatchStatus
 import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.domain.usecase.AddManualTransactionUseCase
+import com.ivan.finanzapp.domain.usecase.PaymentReconciliationUseCase
 import com.ivan.finanzapp.ui.dashboard.TransactionWithCategory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,18 +35,22 @@ class TransactionsViewModel @Inject constructor(
     private val accountDao: AccountDao,
     private val creditCardDao: CreditCardDao,
     private val deferredPurchaseDao: DeferredPurchaseDao,
+    private val paymentMatchSuggestionDao: PaymentMatchSuggestionDao,
     private val calculator: CreditCardCalculator,
     private val addManualTransactionUseCase: AddManualTransactionUseCase,
+    private val paymentReconciliationUseCase: PaymentReconciliationUseCase,
     private val cloudSyncScheduler: CloudSyncScheduler
 ) : ViewModel() {
 
     val uiState: StateFlow<TransactionsUiState> = combine(
         transactionDao.observeAll(),
         categoryDao.observeAll(),
-        accountDao.observeAccounts()
-    ) { transactions, categories, accounts ->
+        accountDao.observeAccounts(),
+        paymentMatchSuggestionDao.observeByStatus(PaymentMatchStatus.PENDING)
+    ) { transactions, categories, accounts, paymentSuggestions ->
         val categoryMap = categories.associateBy { it.id }
         val accountMap = accounts.associateBy { it.id }
+        val paymentSuggestionsByTransaction = paymentSuggestions.groupBy { it.sourceTransactionId }
 
         val items = transactions.map { tx ->
             TransactionWithCategory(
@@ -57,7 +64,8 @@ class TransactionsViewModel @Inject constructor(
             isLoading = false,
             transactions = items,
             categories = categories,
-            accounts = accounts
+            accounts = accounts,
+            pendingPaymentSuggestions = paymentSuggestionsByTransaction
         )
     }.stateIn(
         scope = viewModelScope,
@@ -148,6 +156,18 @@ class TransactionsViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             addManualTransactionUseCase(amount, merchant, typeStr, accountId, categoryId)
+        }
+    }
+
+    fun acceptPaymentSuggestion(suggestionId: String) {
+        viewModelScope.launch {
+            paymentReconciliationUseCase.acceptSuggestion(suggestionId)
+        }
+    }
+
+    fun rejectPaymentSuggestion(suggestionId: String) {
+        viewModelScope.launch {
+            paymentReconciliationUseCase.rejectSuggestion(suggestionId)
         }
     }
 

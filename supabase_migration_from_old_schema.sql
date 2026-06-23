@@ -171,6 +171,40 @@ CREATE TABLE IF NOT EXISTS notification_sync_ledger (
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid()
 );
 
+CREATE TABLE IF NOT EXISTS payment_match_suggestions (
+    id TEXT PRIMARY KEY,
+    "sourceTransactionId" TEXT NOT NULL,
+    "targetType" TEXT NOT NULL,
+    "targetId" TEXT NOT NULL,
+    "targetName" TEXT NOT NULL,
+    "expectedAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    "actualAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    "differenceAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    confidence DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    reason TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    "createdAt" BIGINT NOT NULL DEFAULT 0,
+    "updatedAt" BIGINT NOT NULL DEFAULT 0,
+    "expiresAt" BIGINT NULL,
+    "acceptedApplicationId" TEXT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid()
+);
+
+CREATE TABLE IF NOT EXISTS debt_payment_applications (
+    id TEXT PRIMARY KEY,
+    "sourceTransactionId" TEXT NOT NULL,
+    "suggestionId" TEXT NULL,
+    "targetType" TEXT NOT NULL,
+    "targetId" TEXT NOT NULL,
+    "targetName" TEXT NOT NULL,
+    amount DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    "expectedAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    "differenceAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    "applicationType" TEXT NOT NULL DEFAULT 'CARD_EXTRA_PAYMENT',
+    "appliedAt" BIGINT NOT NULL DEFAULT 0,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid()
+);
+
 -- ==========================================
 -- PATCH EXISTING TABLES
 -- ==========================================
@@ -274,6 +308,39 @@ ALTER TABLE notification_sync_ledger ADD COLUMN IF NOT EXISTS "processedAtMillis
 ALTER TABLE notification_sync_ledger ADD COLUMN IF NOT EXISTS "updatedAtMillis" BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE notification_sync_ledger ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "sourceTransactionId" TEXT;
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "targetType" TEXT NOT NULL DEFAULT 'CREDIT_CARD';
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "targetId" TEXT NOT NULL DEFAULT '';
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "targetName" TEXT NOT NULL DEFAULT '';
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "expectedAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "actualAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "differenceAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'PENDING';
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "createdAt" BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "updatedAt" BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "expiresAt" BIGINT NULL;
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS "acceptedApplicationId" TEXT NULL;
+ALTER TABLE payment_match_suggestions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "sourceTransactionId" TEXT;
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "suggestionId" TEXT NULL;
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "targetType" TEXT NOT NULL DEFAULT 'CREDIT_CARD';
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "targetId" TEXT NOT NULL DEFAULT '';
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "targetName" TEXT NOT NULL DEFAULT '';
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS amount DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "expectedAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "differenceAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "applicationType" TEXT NOT NULL DEFAULT 'CARD_EXTRA_PAYMENT';
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "appliedAt" BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+CREATE UNIQUE INDEX IF NOT EXISTS payment_match_suggestions_source_target_user_key
+    ON payment_match_suggestions ("sourceTransactionId", "targetType", "targetId", user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS debt_payment_applications_source_user_key
+    ON debt_payment_applications ("sourceTransactionId", user_id);
+
 -- ==========================================
 -- RLS POLICIES
 -- ==========================================
@@ -289,6 +356,8 @@ ALTER TABLE deferred_purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE custom_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notification_sync_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_match_suggestions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE debt_payment_applications ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Read categories" ON categories;
 DROP POLICY IF EXISTS "Insert own categories" ON categories;
@@ -304,6 +373,8 @@ DROP POLICY IF EXISTS "Manage own deferred purchases" ON deferred_purchases;
 DROP POLICY IF EXISTS "Manage own assets" ON assets;
 DROP POLICY IF EXISTS "Manage own custom rules" ON custom_rules;
 DROP POLICY IF EXISTS "Manage own ledger" ON notification_sync_ledger;
+DROP POLICY IF EXISTS "Manage own payment suggestions" ON payment_match_suggestions;
+DROP POLICY IF EXISTS "Manage own debt payment applications" ON debt_payment_applications;
 
 CREATE POLICY "Read categories" ON categories FOR SELECT
     USING (user_id IS NULL OR auth.uid() = user_id);
@@ -324,6 +395,8 @@ CREATE POLICY "Manage own deferred purchases" ON deferred_purchases FOR ALL USIN
 CREATE POLICY "Manage own assets" ON assets FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own custom rules" ON custom_rules FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own ledger" ON notification_sync_ledger FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Manage own payment suggestions" ON payment_match_suggestions FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Manage own debt payment applications" ON debt_payment_applications FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- ==========================================
 -- DEFAULT CATEGORIES

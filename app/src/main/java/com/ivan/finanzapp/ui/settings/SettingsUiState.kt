@@ -8,7 +8,7 @@ data class SettingsUiState(
     val isLoading: Boolean = true,
     val apiKey: String = "",
     val accounts: List<AccountEntity> = emptyList(),
-    val creditCardDebts: Map<String, Double> = emptyMap(),
+    val creditCardsMap: Map<String, com.ivan.finanzapp.data.local.entity.CreditCardEntity> = emptyMap(),
     val customRules: List<CustomRuleEntity> = emptyList(),
     val isAddAccountDialogVisible: Boolean = false,
     val isProcessingDialogVisible: Boolean = false,

@@ -24,6 +24,7 @@ import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.domain.usecase.AccountResolver
 import com.ivan.finanzapp.domain.usecase.CategoryResolver
+import com.ivan.finanzapp.domain.usecase.PaymentReconciliationUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -70,6 +71,7 @@ class TransactionProcessor @Inject constructor(
     private val deferredPurchaseDao: DeferredPurchaseDao,
     private val notificationSyncLedgerDao: NotificationSyncLedgerDao,
     private val calculator: CreditCardCalculator,
+    private val paymentReconciliationUseCase: PaymentReconciliationUseCase,
     private val cloudSyncScheduler: CloudSyncScheduler
 ) {
 
@@ -169,6 +171,7 @@ class TransactionProcessor @Inject constructor(
         
         val fullMessage = "${ledgerEntry.title} ${ledgerEntry.text}"
 
+        var createdTransaction: TransactionEntity? = null
         database.withTransaction {
             val categoryId = categoryResolver.resolve(
                 merchant = transaction.merchant,
@@ -227,7 +230,9 @@ class TransactionProcessor @Inject constructor(
                 postedAtMillis = ledgerEntry.postedAtMillis
             )
             notificationSyncLedgerDao.update(parsedLedgerEntry)
+            createdTransaction = entity
         }
+        createdTransaction?.let { paymentReconciliationUseCase.generateSuggestionsForTransaction(it) }
     }
 
     private suspend fun parseNotification(

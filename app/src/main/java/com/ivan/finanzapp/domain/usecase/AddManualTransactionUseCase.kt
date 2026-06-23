@@ -28,6 +28,7 @@ class AddManualTransactionUseCase @Inject constructor(
     private val creditCardDao: CreditCardDao,
     private val deferredPurchaseDao: DeferredPurchaseDao,
     private val calculator: CreditCardCalculator,
+    private val paymentReconciliationUseCase: PaymentReconciliationUseCase,
     private val cloudSyncScheduler: CloudSyncScheduler
 ) {
     suspend operator fun invoke(
@@ -39,6 +40,7 @@ class AddManualTransactionUseCase @Inject constructor(
     ) {
         val id = UUID.randomUUID().toString()
         val timestamp = System.currentTimeMillis()
+        var createdTransaction: TransactionEntity? = null
 
         database.withTransaction {
             val account = accountId?.let { accountDao.getAccountById(it) }
@@ -65,6 +67,7 @@ class AddManualTransactionUseCase @Inject constructor(
 
             val inserted = transactionDao.insertIfNotExists(entity)
             if (inserted != 0L) {
+                createdTransaction = entity
                 account?.let { accountForSideEffects ->
                     applyFinancialSideEffects(
                         transactionId = id,
@@ -78,6 +81,8 @@ class AddManualTransactionUseCase @Inject constructor(
                 }
             }
         }
+
+        createdTransaction?.let { paymentReconciliationUseCase.generateSuggestionsForTransaction(it) }
         
         try {
             FinanzAppWidget().updateAll(context)

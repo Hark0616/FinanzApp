@@ -36,6 +36,8 @@ class SupabaseSyncManager @Inject constructor(
     private val assetDao: AssetDao,
     private val customRuleDao: CustomRuleDao,
     private val notificationSyncLedgerDao: NotificationSyncLedgerDao,
+    private val paymentMatchSuggestionDao: PaymentMatchSuggestionDao,
+    private val debtPaymentApplicationDao: DebtPaymentApplicationDao,
     private val syncDeleteLogDao: SyncDeleteLogDao
 ) {
     private val postgrestModule = supabaseClient.postgrest
@@ -43,7 +45,7 @@ class SupabaseSyncManager @Inject constructor(
     /**
      * Sincroniza bidireccionalmente los datos locales con la nube en Supabase.
      * 1. Elimina en Supabase los registros borrados localmente (según sync_delete_log).
-     * 2. Sube (upsert) todos los registros locales de las 11 entidades.
+     * 2. Sube (upsert) todos los registros locales de las entidades sincronizables.
      * 3. Descarga (select) y guarda localmente todos los registros del usuario en la nube.
      */
     suspend fun sync(): Result<SyncSummary> = withContext(Dispatchers.IO) {
@@ -170,6 +172,22 @@ class SupabaseSyncManager @Inject constructor(
                 uploadedRows += dtos.size
             }
 
+            // 12. Sugerencias de conciliación de pagos
+            val localSuggestions = paymentMatchSuggestionDao.getAllSnapshot()
+            if (localSuggestions.isNotEmpty()) {
+                val dtos = localSuggestions.map { it.toDto().copy(user_id = userId) }
+                postgrestModule.from("payment_match_suggestions").upsert(dtos)
+                uploadedRows += dtos.size
+            }
+
+            // 13. Aplicaciones confirmadas de pagos a deuda
+            val localApplications = debtPaymentApplicationDao.getAllSnapshot()
+            if (localApplications.isNotEmpty()) {
+                val dtos = localApplications.map { it.toDto().copy(user_id = userId) }
+                postgrestModule.from("debt_payment_applications").upsert(dtos)
+                uploadedRows += dtos.size
+            }
+
             // ==========================================
             // FASE 3: DESCARGAR CAMBIOS NUEVOS DESDE LA NUBE
             // ==========================================
@@ -229,6 +247,16 @@ class SupabaseSyncManager @Inject constructor(
                 .select()
                 .decodeList<NotificationSyncLedgerDto>()
 
+            // 12. Sugerencias de conciliación de pagos
+            val remoteSuggestions = postgrestModule.from("payment_match_suggestions")
+                .select()
+                .decodeList<PaymentMatchSuggestionDto>()
+
+            // 13. Aplicaciones confirmadas de pagos a deuda
+            val remoteApplications = postgrestModule.from("debt_payment_applications")
+                .select()
+                .decodeList<DebtPaymentApplicationDto>()
+
             downloadedRows += remoteCategories.size +
                     remoteAccounts.size +
                     remoteCards.size +
@@ -239,7 +267,9 @@ class SupabaseSyncManager @Inject constructor(
                     remotePurchases.size +
                     remoteAssets.size +
                     remoteRules.size +
-                    remoteLedger.size
+                    remoteLedger.size +
+                    remoteSuggestions.size +
+                    remoteApplications.size
 
             database.withTransaction {
                 for (catDto in remoteCategories) {
@@ -269,6 +299,8 @@ class SupabaseSyncManager @Inject constructor(
                     customRuleDao.upsert(ruleDto.toEntity())
                 }
                 notificationSyncLedgerDao.upsertAll(remoteLedger.map { it.toEntity() })
+                paymentMatchSuggestionDao.upsertAll(remoteSuggestions.map { it.toEntity() })
+                debtPaymentApplicationDao.upsertAll(remoteApplications.map { it.toEntity() })
             }
 
             securePrefs.setLastCloudSyncAt(System.currentTimeMillis())

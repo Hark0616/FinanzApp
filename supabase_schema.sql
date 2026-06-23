@@ -211,6 +211,50 @@ CREATE TABLE IF NOT EXISTS notification_sync_ledger (
 -- Enable RLS for notification sync ledger
 ALTER TABLE notification_sync_ledger ENABLE ROW LEVEL SECURITY;
 
+-- 12. PAYMENT MATCH SUGGESTIONS TABLE
+CREATE TABLE IF NOT EXISTS payment_match_suggestions (
+    id TEXT PRIMARY KEY,
+    "sourceTransactionId" TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    "targetType" TEXT NOT NULL,
+    "targetId" TEXT NOT NULL,
+    "targetName" TEXT NOT NULL,
+    "expectedAmount" DOUBLE PRECISION NOT NULL,
+    "actualAmount" DOUBLE PRECISION NOT NULL,
+    "differenceAmount" DOUBLE PRECISION NOT NULL,
+    confidence DOUBLE PRECISION NOT NULL,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL,
+    "createdAt" BIGINT NOT NULL,
+    "updatedAt" BIGINT NOT NULL,
+    "expiresAt" BIGINT NULL,
+    "acceptedApplicationId" TEXT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid(),
+    UNIQUE ("sourceTransactionId", "targetType", "targetId", user_id)
+);
+
+-- Enable RLS for payment match suggestions
+ALTER TABLE payment_match_suggestions ENABLE ROW LEVEL SECURITY;
+
+-- 13. DEBT PAYMENT APPLICATIONS TABLE
+CREATE TABLE IF NOT EXISTS debt_payment_applications (
+    id TEXT PRIMARY KEY,
+    "sourceTransactionId" TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    "suggestionId" TEXT NULL,
+    "targetType" TEXT NOT NULL,
+    "targetId" TEXT NOT NULL,
+    "targetName" TEXT NOT NULL,
+    amount DOUBLE PRECISION NOT NULL,
+    "expectedAmount" DOUBLE PRECISION NOT NULL,
+    "differenceAmount" DOUBLE PRECISION NOT NULL,
+    "applicationType" TEXT NOT NULL,
+    "appliedAt" BIGINT NOT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid(),
+    UNIQUE ("sourceTransactionId", user_id)
+);
+
+-- Enable RLS for debt payment applications
+ALTER TABLE debt_payment_applications ENABLE ROW LEVEL SECURITY;
+
 
 -- ==========================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
@@ -231,6 +275,8 @@ DROP POLICY IF EXISTS "Manage own deferred purchases" ON deferred_purchases;
 DROP POLICY IF EXISTS "Manage own assets" ON assets;
 DROP POLICY IF EXISTS "Manage own custom rules" ON custom_rules;
 DROP POLICY IF EXISTS "Manage own ledger" ON notification_sync_ledger;
+DROP POLICY IF EXISTS "Manage own payment suggestions" ON payment_match_suggestions;
+DROP POLICY IF EXISTS "Manage own debt payment applications" ON debt_payment_applications;
 
 -- Policies for CATEGORIES (users can read defaults and their own, but only write their own)
 CREATE POLICY "Read categories" ON categories FOR SELECT 
@@ -253,6 +299,8 @@ CREATE POLICY "Manage own deferred purchases" ON deferred_purchases FOR ALL USIN
 CREATE POLICY "Manage own assets" ON assets FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own custom rules" ON custom_rules FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own ledger" ON notification_sync_ledger FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Manage own payment suggestions" ON payment_match_suggestions FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Manage own debt payment applications" ON debt_payment_applications FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 
 -- ==========================================

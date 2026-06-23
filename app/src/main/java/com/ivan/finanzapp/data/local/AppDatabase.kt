@@ -12,20 +12,24 @@ import com.ivan.finanzapp.data.local.converters.Converters
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
+import com.ivan.finanzapp.data.local.dao.DebtPaymentApplicationDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
 import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
+import com.ivan.finanzapp.data.local.dao.PaymentMatchSuggestionDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.CategoryEntity
 import com.ivan.finanzapp.data.local.entity.CreditCardEntity
+import com.ivan.finanzapp.data.local.entity.DebtPaymentApplicationEntity
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
 import com.ivan.finanzapp.data.local.entity.MerchantCategoryMappingEntity
 import com.ivan.finanzapp.data.local.entity.NotificationSyncLedgerEntity
+import com.ivan.finanzapp.data.local.entity.PaymentMatchSuggestionEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.data.local.entity.AssetEntity
 import com.ivan.finanzapp.data.local.dao.AssetDao
@@ -48,9 +52,11 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         AssetEntity::class,
         CustomRuleEntity::class,
         NotificationSyncLedgerEntity::class,
-        SyncDeleteLogEntity::class
+        SyncDeleteLogEntity::class,
+        PaymentMatchSuggestionEntity::class,
+        DebtPaymentApplicationEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -68,6 +74,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun customRuleDao(): CustomRuleDao
     abstract fun notificationSyncLedgerDao(): NotificationSyncLedgerDao
     abstract fun syncDeleteLogDao(): SyncDeleteLogDao
+    abstract fun paymentMatchSuggestionDao(): PaymentMatchSuggestionDao
+    abstract fun debtPaymentApplicationDao(): DebtPaymentApplicationDao
 
 
     companion object {
@@ -256,6 +264,79 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `payment_match_suggestions` (
+                        `id` TEXT NOT NULL,
+                        `sourceTransactionId` TEXT NOT NULL,
+                        `targetType` TEXT NOT NULL,
+                        `targetId` TEXT NOT NULL,
+                        `targetName` TEXT NOT NULL,
+                        `expectedAmount` REAL NOT NULL,
+                        `actualAmount` REAL NOT NULL,
+                        `differenceAmount` REAL NOT NULL,
+                        `confidence` REAL NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `expiresAt` INTEGER,
+                        `acceptedApplicationId` TEXT,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`sourceTransactionId`) REFERENCES `transactions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_payment_match_suggestions_sourceTransactionId` ON `payment_match_suggestions` (`sourceTransactionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_payment_match_suggestions_status` ON `payment_match_suggestions` (`status`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_payment_match_suggestions_sourceTransactionId_targetType_targetId` ON `payment_match_suggestions` (`sourceTransactionId`, `targetType`, `targetId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `debt_payment_applications` (
+                        `id` TEXT NOT NULL,
+                        `sourceTransactionId` TEXT NOT NULL,
+                        `suggestionId` TEXT,
+                        `targetType` TEXT NOT NULL,
+                        `targetId` TEXT NOT NULL,
+                        `targetName` TEXT NOT NULL,
+                        `amount` REAL NOT NULL,
+                        `expectedAmount` REAL NOT NULL,
+                        `differenceAmount` REAL NOT NULL,
+                        `applicationType` TEXT NOT NULL,
+                        `appliedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`sourceTransactionId`) REFERENCES `transactions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_debt_payment_applications_sourceTransactionId` ON `debt_payment_applications` (`sourceTransactionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_debt_payment_applications_suggestionId` ON `debt_payment_applications` (`suggestionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_debt_payment_applications_targetType_targetId` ON `debt_payment_applications` (`targetType`, `targetId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS `log_payment_match_suggestions_delete` AFTER DELETE ON `payment_match_suggestions`
+                    BEGIN
+                        INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                        VALUES ('payment_match_suggestions', OLD.`id`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                    END;
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS `log_debt_payment_applications_delete` AFTER DELETE ON `debt_payment_applications`
+                    BEGIN
+                        INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                        VALUES ('debt_payment_applications', OLD.`id`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                    END;
+                    """.trimIndent()
+                )
+            }
+        }
+
         val DB_CALLBACK = object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
@@ -278,7 +359,9 @@ abstract class AppDatabase : RoomDatabase() {
                     "deferred_purchases" to "id",
                     "assets" to "id",
                     "custom_rules" to "id",
-                    "notification_sync_ledger" to "id"
+                    "notification_sync_ledger" to "id",
+                    "payment_match_suggestions" to "id",
+                    "debt_payment_applications" to "id"
                 )
                 for ((table, pk) in tables) {
                     db.execSQL(
@@ -346,7 +429,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_10_11,
                     MIGRATION_11_12,
                     MIGRATION_12_13,
-                    MIGRATION_13_14
+                    MIGRATION_13_14,
+                    MIGRATION_14_15
                 )
                 .addCallback(DB_CALLBACK)
                 .fallbackToDestructiveMigration(dropAllTables = true)

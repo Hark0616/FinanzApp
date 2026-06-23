@@ -6,7 +6,10 @@ import com.ivan.finanzapp.domain.model.LoanAmortizationType
 import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.data.local.entity.AssetType
+import com.ivan.finanzapp.data.local.entity.DebtPaymentApplicationType
 import com.ivan.finanzapp.data.local.entity.NotificationProcessingStatus
+import com.ivan.finanzapp.data.local.entity.PaymentMatchStatus
+import com.ivan.finanzapp.data.local.entity.PaymentMatchTargetType
 
 /**
  * Convierte enums a String y viceversa para que Room pueda persistirlos.
@@ -57,4 +60,28 @@ class Converters {
     fun toNotificationProcessingStatus(value: String): NotificationProcessingStatus =
         NotificationProcessingStatus.entries.firstOrNull { it.name == value }
             ?: NotificationProcessingStatus.FAILED
+
+    @TypeConverter
+    fun fromPaymentMatchTargetType(value: PaymentMatchTargetType): String = value.name
+
+    @TypeConverter
+    fun toPaymentMatchTargetType(value: String): PaymentMatchTargetType =
+        PaymentMatchTargetType.entries.firstOrNull { it.name == value }
+            ?: PaymentMatchTargetType.CREDIT_CARD
+
+    @TypeConverter
+    fun fromPaymentMatchStatus(value: PaymentMatchStatus): String = value.name
+
+    @TypeConverter
+    fun toPaymentMatchStatus(value: String): PaymentMatchStatus =
+        PaymentMatchStatus.entries.firstOrNull { it.name == value }
+            ?: PaymentMatchStatus.PENDING
+
+    @TypeConverter
+    fun fromDebtPaymentApplicationType(value: DebtPaymentApplicationType): String = value.name
+
+    @TypeConverter
+    fun toDebtPaymentApplicationType(value: String): DebtPaymentApplicationType =
+        DebtPaymentApplicationType.entries.firstOrNull { it.name == value }
+            ?: DebtPaymentApplicationType.CARD_EXTRA_PAYMENT
 }

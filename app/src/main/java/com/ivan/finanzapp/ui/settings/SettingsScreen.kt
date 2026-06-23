@@ -50,6 +50,7 @@ fun SettingsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var accountToDelete by remember { mutableStateOf<AccountEntity?>(null) }
+    var accountToEdit by remember { mutableStateOf<AccountEntity?>(null) }
     var securityMessage by remember { mutableStateOf<String?>(null) }
     var isSecurityPromptOpen by remember { mutableStateOf(false) }
 
@@ -94,12 +95,12 @@ fun SettingsScreen(
                 items(state.accounts, key = { it.id }) { account ->
                     val isCredit = account.type == com.ivan.finanzapp.domain.model.AccountType.TARJETA_CREDITO
                     val displayValue = if (isCredit) {
-                        val debt = state.creditCardDebts[account.id] ?: 0.0
+                        val debt = state.creditCardsMap[account.id]?.currentDebt ?: 0.0
                         "Deuda: ${formatCOP(debt)}"
                     } else {
                         formatCOP(account.currentBalance)
                     }
-                    val valueColor = if (isCredit && (state.creditCardDebts[account.id] ?: 0.0) > 0.0) {
+                    val valueColor = if (isCredit && (state.creditCardsMap[account.id]?.currentDebt ?: 0.0) > 0.0) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurface
@@ -108,6 +109,7 @@ fun SettingsScreen(
                         account = account,
                         displayValue = displayValue,
                         valueColor = valueColor,
+                        onEditClick = { accountToEdit = account },
                         onDeleteClick = { accountToDelete = account }
                     )
                 }
@@ -394,6 +396,89 @@ fun SettingsScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { accountToDelete = null }) {
+                        Text("Cancelar")
+                    }
+                }
+            )
+        }
+
+        // Diálogo para Editar Cuenta / Saldo / Cupo
+        accountToEdit?.let { account ->
+            val isCredit = account.type == AccountType.TARJETA_CREDITO
+            val associatedCard = state.creditCardsMap[account.id]
+
+            var editBalance by remember(account.id) {
+                mutableStateOf(if (isCredit) "" else account.currentBalance.toString())
+            }
+            var editCreditLimit by remember(account.id) {
+                mutableStateOf(associatedCard?.creditLimit?.toString() ?: "")
+            }
+            var editCurrentDebt by remember(account.id) {
+                mutableStateOf(associatedCard?.currentDebt?.toString() ?: "")
+            }
+
+            AlertDialog(
+                onDismissRequest = { accountToEdit = null },
+                title = { Text("Editar ${account.name}") },
+                text = {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (!isCredit) {
+                            item {
+                                OutlinedTextField(
+                                    value = editBalance,
+                                    onValueChange = { editBalance = it },
+                                    label = { Text("Saldo Actual ($)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                )
+                            }
+                        } else {
+                            item {
+                                OutlinedTextField(
+                                    value = editCreditLimit,
+                                    onValueChange = { editCreditLimit = it },
+                                    label = { Text("Cupo Límite ($)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                )
+                            }
+                            item {
+                                OutlinedTextField(
+                                    value = editCurrentDebt,
+                                    onValueChange = { editCurrentDebt = it },
+                                    label = { Text("Deuda Actual ($)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (isCredit) {
+                                val limit = editCreditLimit.toDoubleOrNull() ?: 0.0
+                                val debt = editCurrentDebt.toDoubleOrNull() ?: 0.0
+                                viewModel.updateCreditCardDetails(account.id, limit, debt)
+                            } else {
+                                val balance = editBalance.toDoubleOrNull() ?: 0.0
+                                viewModel.updateAccountBalance(account.id, balance)
+                            }
+                            accountToEdit = null
+                        }
+                    ) {
+                        Text("Guardar")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { accountToEdit = null }) {
                         Text("Cancelar")
                     }
                 }
@@ -909,6 +994,7 @@ private fun AccountItemRow(
     account: AccountEntity,
     displayValue: String,
     valueColor: androidx.compose.ui.graphics.Color,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
     Card(
@@ -948,6 +1034,10 @@ private fun AccountItemRow(
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.width(8.dp))
+                IconButton(onClick = onEditClick) {
+                    Icon(Icons.Default.Edit, contentDescription = "Editar saldo / cupo", tint = Color.Gray)
+                }
+                Spacer(Modifier.width(4.dp))
                 IconButton(onClick = onDeleteClick) {
                     Icon(Icons.Default.Delete, contentDescription = "Eliminar cuenta", tint = Color.Gray)
                 }

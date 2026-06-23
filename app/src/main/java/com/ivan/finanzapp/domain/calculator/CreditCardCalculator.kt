@@ -135,7 +135,19 @@ class CreditCardCalculator @Inject constructor() {
         cutoffDay: Int,
         targetDate: LocalDate
     ): Double {
-        return installmentsDue(purchase, cutoffDay, targetDate) * installmentAmount(purchase, cardInterestRateEA)
+        val dueInstallments = installmentsDue(purchase, cutoffDay, targetDate)
+        if (dueInstallments <= 0) return 0.0
+
+        var simulatedPurchase = purchase
+        var totalDue = 0.0
+        repeat(dueInstallments) {
+            totalDue += installmentAmount(simulatedPurchase, cardInterestRateEA)
+            simulatedPurchase = simulatedPurchase.copy(
+                paidInstallments = (simulatedPurchase.paidInstallments + 1)
+                    .coerceAtMost(simulatedPurchase.totalInstallments)
+            )
+        }
+        return totalDue
     }
 
     /**
@@ -166,14 +178,44 @@ class CreditCardCalculator @Inject constructor() {
     }
 
     /**
+     * Fecha de corte que corresponde al vencimiento vigente en una fecha de pago concreta.
+     * Es útil al conciliar notificaciones históricas: el ciclo se calcula desde la fecha
+     * del movimiento, no desde el día actual del dispositivo.
+     */
+    fun billingCutoffDateForPayment(card: CreditCardEntity, paymentDate: LocalDate): LocalDate {
+        var dueDate = LocalDate.of(paymentDate.year, paymentDate.month, safeDayOfMonth(card.paymentDueDay, paymentDate))
+        if (paymentDate.isAfter(dueDate)) {
+            dueDate = dueDate.plusMonths(1)
+                .withDayOfMonth(safeDayOfMonth(card.paymentDueDay, dueDate.plusMonths(1)))
+        }
+
+        return if (card.cutoffDay < card.paymentDueDay) {
+            val day = card.cutoffDay.coerceAtMost(dueDate.month.length(dueDate.isLeapYear))
+            LocalDate.of(dueDate.year, dueDate.month, day)
+        } else {
+            val prevMonth = dueDate.minusMonths(1)
+            val day = card.cutoffDay.coerceAtMost(prevMonth.month.length(prevMonth.isLeapYear))
+            LocalDate.of(prevMonth.year, prevMonth.month, day)
+        }
+    }
+
+    /**
      * Pago mínimo requerido.
      * Es la suma de las cuotas que corresponden al periodo de facturación actual (al corte actual).
      */
     fun minimumPayment(card: CreditCardEntity, deferredPurchases: List<DeferredPurchaseEntity> = emptyList()): Double {
-        if (card.currentDebt <= 0.0) return 0.0
         val cutoffDate = nextBillingCutoffDate(card)
+        return minimumPayment(card, deferredPurchases, cutoffDate)
+    }
+
+    fun minimumPayment(
+        card: CreditCardEntity,
+        deferredPurchases: List<DeferredPurchaseEntity>,
+        cutoffDate: LocalDate
+    ): Double {
+        if (card.currentDebt <= 0.0) return 0.0
         val amountDue = totalAmountDue(deferredPurchases, card.interestRateEA, card.cutoffDay, cutoffDate)
-        return amountDue.coerceAtMost(card.currentDebt)
+        return amountDue
     }
 
 
@@ -320,7 +362,99 @@ class CreditCardCalculator @Inject constructor() {
         return PaymentDistributionResult(updated, deletedIds)
     }
 
+    /**
+     * Aplica un pago de extracto/ciclo sin confundir intereses con capital.
+     *
+     * Para cada cuota facturada primero cubre el interés calculado y solo después
+     * avanza o reduce capital. Si sobra dinero, se trata como abono extra a capital.
+     */
+    fun distributeStatementPayment(
+        paymentAmount: Double,
+        card: CreditCardEntity,
+        purchases: List<DeferredPurchaseEntity>,
+        billingCutoffDate: LocalDate
+    ): PaymentDistributionResult {
+        var remainingPayment = paymentAmount.coerceAtLeast(0.0)
+        val updatedById = linkedMapOf<String, DeferredPurchaseEntity>()
+        val deletedIds = linkedSetOf<String>()
+
+        val activePurchases = purchases
+            .filter { remainingInstallments(it) > 0 }
+            .sortedWith(compareBy<DeferredPurchaseEntity> { it.purchaseDate }.thenBy { it.createdAt })
+
+        for (purchase in activePurchases) {
+            if (remainingPayment <= MONEY_EPSILON) break
+            if (purchase.id in deletedIds) continue
+
+            var current = updatedById[purchase.id] ?: purchase
+            val dueInstallments = installmentsDue(current, card.cutoffDay, billingCutoffDate)
+                .coerceAtMost(remainingInstallments(current))
+
+            repeat(dueInstallments) {
+                if (remainingPayment <= MONEY_EPSILON || current.id in deletedIds) return@repeat
+
+                val principalInstallment = installmentAmount(current)
+                val installmentWithInterest = installmentAmount(current, card.interestRateEA)
+                if (principalInstallment <= MONEY_EPSILON || installmentWithInterest <= MONEY_EPSILON) {
+                    deletedIds.add(current.id)
+                    updatedById.remove(current.id)
+                    return@repeat
+                }
+
+                val interestPortion = (installmentWithInterest - principalInstallment).coerceAtLeast(0.0)
+                val interestPaid = interestPortion.coerceAtMost(remainingPayment)
+                remainingPayment -= interestPaid
+
+                if (remainingPayment + MONEY_EPSILON >= principalInstallment) {
+                    remainingPayment -= principalInstallment
+                    val newPaid = current.paidInstallments + 1
+                    if (newPaid >= current.totalInstallments) {
+                        deletedIds.add(current.id)
+                        updatedById.remove(current.id)
+                    } else {
+                        current = current.copy(paidInstallments = newPaid)
+                        updatedById[current.id] = current
+                    }
+                } else if (remainingPayment > MONEY_EPSILON) {
+                    val remainingInst = remainingInstallments(current)
+                    val adjustment = remainingPayment * current.totalInstallments.toDouble() / remainingInst.toDouble()
+                    val newTotal = (current.totalAmount - adjustment).coerceAtLeast(0.0)
+                    remainingPayment = 0.0
+                    if (newTotal <= MONEY_EPSILON) {
+                        deletedIds.add(current.id)
+                        updatedById.remove(current.id)
+                    } else {
+                        current = current.copy(totalAmount = newTotal)
+                        updatedById[current.id] = current
+                    }
+                }
+            }
+        }
+
+        if (remainingPayment > MONEY_EPSILON) {
+            val remainingPurchases = purchases.mapNotNull { purchase ->
+                when {
+                    purchase.id in deletedIds -> null
+                    updatedById.containsKey(purchase.id) -> updatedById[purchase.id]
+                    else -> purchase
+                }
+            }
+            val extraResult = distributePayment(remainingPayment, remainingPurchases)
+            extraResult.updatedPurchases.forEach { updatedById[it.id] = it }
+            extraResult.deletedPurchaseIds.forEach { id ->
+                deletedIds.add(id)
+                updatedById.remove(id)
+            }
+        }
+
+        return PaymentDistributionResult(updatedById.values.toList(), deletedIds.toList())
+    }
+
     enum class UsageLevel { LOW, MEDIUM, HIGH }
+
+    private companion object {
+        const val MONEY_EPSILON = 0.0001
+    }
 }
 
 /**

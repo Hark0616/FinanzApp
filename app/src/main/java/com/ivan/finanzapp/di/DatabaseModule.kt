@@ -7,11 +7,13 @@ import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.AssetDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
+import com.ivan.finanzapp.data.local.dao.DebtPaymentApplicationDao
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
 import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
+import com.ivan.finanzapp.data.local.dao.PaymentMatchSuggestionDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import dagger.Module
 import dagger.Provides
@@ -79,4 +81,12 @@ object DatabaseModule {
     @Provides
     fun provideSyncDeleteLogDao(db: AppDatabase): SyncDeleteLogDao =
         db.syncDeleteLogDao()
+
+    @Provides
+    fun providePaymentMatchSuggestionDao(db: AppDatabase): PaymentMatchSuggestionDao =
+        db.paymentMatchSuggestionDao()
+
+    @Provides
+    fun provideDebtPaymentApplicationDao(db: AppDatabase): DebtPaymentApplicationDao =
+        db.debtPaymentApplicationDao()
 }
