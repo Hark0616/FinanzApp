@@ -120,14 +120,29 @@ fun SettingsScreen(
                     isBusy = isSecurityPromptOpen,
                     onAppLockToggle = { enabled ->
                         if (!enabled) {
-                            securityMessage = "Bloqueo local desactivado."
-                            viewModel.setAppLockEnabled(false)
+                            isSecurityPromptOpen = true
+                            requestLocalSecurityConfirmation(
+                                context = context,
+                                title = "Desactivar seguridad local",
+                                subtitle = "Confirma con tu huella o PIN para desactivar",
+                                cancelMessage = "Confirmación cancelada. El bloqueo local sigue activo.",
+                                onSuccess = {
+                                    isSecurityPromptOpen = false
+                                    securityMessage = "Bloqueo local desactivado."
+                                    viewModel.setAppLockEnabled(false)
+                                },
+                                onError = { message ->
+                                    isSecurityPromptOpen = false
+                                    securityMessage = message
+                                }
+                            )
                         } else {
                             isSecurityPromptOpen = true
                             requestLocalSecurityConfirmation(
                                 context = context,
                                 title = "Activar seguridad local",
                                 subtitle = "Confirma con biometría o PIN del celular",
+                                cancelMessage = "Confirmación cancelada. No se activó el bloqueo local.",
                                 onSuccess = {
                                     isSecurityPromptOpen = false
                                     securityMessage = "Bloqueo local activado."
@@ -419,6 +434,7 @@ private fun requestLocalSecurityConfirmation(
     context: Context,
     title: String,
     subtitle: String,
+    cancelMessage: String,
     onSuccess: () -> Unit,
     onError: (String) -> Unit
 ) {
@@ -432,7 +448,7 @@ private fun requestLocalSecurityConfirmation(
         activity = activity,
         title = title,
         subtitle = subtitle,
-        cancelMessage = "Confirmación cancelada. No se activó el bloqueo local.",
+        cancelMessage = cancelMessage,
         onSuccess = onSuccess,
         onError = onError
     )
