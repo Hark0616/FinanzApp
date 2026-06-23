@@ -17,6 +17,9 @@ interface CreditCardDao {
     @Query("SELECT * FROM credit_cards WHERE accountId = :accountId LIMIT 1")
     suspend fun getByAccountId(accountId: String): CreditCardEntity?
 
+    @Query("SELECT * FROM credit_cards WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): CreditCardEntity?
+
     @Query("SELECT * FROM credit_cards WHERE accountId = :accountId LIMIT 1")
     fun observeByAccountId(accountId: String): Flow<CreditCardEntity?>
 
@@ -35,4 +38,7 @@ interface CreditCardDao {
 
     @Query("DELETE FROM credit_cards WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("SELECT * FROM credit_cards")
+    suspend fun getAllSnapshot(): List<CreditCardEntity>
 }

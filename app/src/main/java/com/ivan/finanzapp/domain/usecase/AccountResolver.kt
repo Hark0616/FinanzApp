@@ -65,6 +65,13 @@ class AccountResolver @Inject constructor(
                 !digits.isNullOrBlank() && rawNotificationText.contains(digits)
             }
             if (matched != null) return matched.id
+
+            // Si es una transacción relacionada con tarjeta de crédito (compra o pago)
+            // y no pudimos hacer coincidir la tarjeta exacta por sus dígitos,
+            // devolvemos null para que el usuario la asigne manualmente en lugar de auto-asignarla mal.
+            if (isCreditCardRelated) {
+                return null
+            }
         }
 
         return candidates.firstOrNull()?.id

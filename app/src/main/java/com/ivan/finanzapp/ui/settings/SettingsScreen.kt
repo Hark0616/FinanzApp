@@ -1,5 +1,6 @@
 package com.ivan.finanzapp.ui.settings
 
+import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -9,12 +10,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -30,13 +35,23 @@ import com.ivan.finanzapp.ui.components.SectionTitle
 import com.ivan.finanzapp.ui.components.formatCOP
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.ivan.finanzapp.ui.security.LocalDeviceAuthenticator
+import com.ivan.finanzapp.ui.security.findFragmentActivity
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    onNavigateToAuth: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var accountToDelete by remember { mutableStateOf<AccountEntity?>(null) }
+    var securityMessage by remember { mutableStateOf<String?>(null) }
+    var isSecurityPromptOpen by remember { mutableStateOf(false) }
 
     Scaffold { innerPadding ->
         LazyColumn(
@@ -77,10 +92,216 @@ fun SettingsScreen(
                 }
             } else {
                 items(state.accounts, key = { it.id }) { account ->
+                    val isCredit = account.type == com.ivan.finanzapp.domain.model.AccountType.TARJETA_CREDITO
+                    val displayValue = if (isCredit) {
+                        val debt = state.creditCardDebts[account.id] ?: 0.0
+                        "Deuda: ${formatCOP(debt)}"
+                    } else {
+                        formatCOP(account.currentBalance)
+                    }
+                    val valueColor = if (isCredit && (state.creditCardDebts[account.id] ?: 0.0) > 0.0) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
                     AccountItemRow(
                         account = account,
-                        onDeleteClick = { viewModel.deleteAccount(account.id) }
+                        displayValue = displayValue,
+                        valueColor = valueColor,
+                        onDeleteClick = { accountToDelete = account }
                     )
+                }
+            }
+
+            item {
+                SecuritySettingsCard(
+                    state = state,
+                    securityMessage = securityMessage,
+                    isBusy = isSecurityPromptOpen,
+                    onAppLockToggle = { enabled ->
+                        if (!enabled) {
+                            isSecurityPromptOpen = true
+                            requestLocalSecurityConfirmation(
+                                context = context,
+                                title = "Desactivar seguridad local",
+                                subtitle = "Confirma con tu huella o PIN para desactivar",
+                                cancelMessage = "Confirmación cancelada. El bloqueo local sigue activo.",
+                                onSuccess = {
+                                    isSecurityPromptOpen = false
+                                    securityMessage = "Bloqueo local desactivado."
+                                    viewModel.setAppLockEnabled(false)
+                                },
+                                onError = { message ->
+                                    isSecurityPromptOpen = false
+                                    securityMessage = message
+                                }
+                            )
+                        } else {
+                            isSecurityPromptOpen = true
+                            requestLocalSecurityConfirmation(
+                                context = context,
+                                title = "Activar seguridad local",
+                                subtitle = "Confirma con biometría o PIN del celular",
+                                cancelMessage = "Confirmación cancelada. No se activó el bloqueo local.",
+                                onSuccess = {
+                                    isSecurityPromptOpen = false
+                                    securityMessage = "Bloqueo local activado."
+                                    viewModel.setAppLockEnabled(true)
+                                },
+                                onError = { message ->
+                                    isSecurityPromptOpen = false
+                                    securityMessage = message
+                                }
+                            )
+                        }
+                    }
+                )
+            }
+
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            }
+
+            // Sección: Copia de Seguridad y Sincronización en la Nube
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (state.currentUserEmail != null) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                                contentDescription = null,
+                                tint = if (state.currentUserEmail != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Backup y sincronización",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (state.currentUserEmail != null)
+                                        "Conectado como ${state.currentUserEmail}"
+                                    else "Tus datos siguen locales hasta que conectes una cuenta.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (state.currentUserEmail != null) {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                            ) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = if (state.lastCloudSyncAt > 0L)
+                                            "Última copia: ${formatLastSyncTime(state.lastCloudSyncAt)}"
+                                        else "Aún no hay una copia confirmada en la nube.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "La app también intentará respaldar en segundo plano cuando haya conexión.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                                    )
+                                }
+                            }
+
+                            AnimatedVisibility(visible = state.syncStatusMessage != null) {
+                                state.syncStatusMessage?.let { message ->
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = message,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(12.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            AnimatedVisibility(visible = state.syncErrorMessage != null) {
+                                state.syncErrorMessage?.let { message ->
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.errorContainer,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = message,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.padding(12.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = { viewModel.syncNow() },
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    enabled = !state.isSyncing
+                                ) {
+                                    if (state.isSyncing) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    }
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(if (state.isSyncing) "Sincronizando" else "Sincronizar ahora", fontSize = 12.sp)
+                                }
+                                TextButton(
+                                    onClick = { viewModel.signOut() }
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Cerrar Sesión", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        } else {
+                            Button(
+                                onClick = onNavigateToAuth,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Activar backup en la nube", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -130,7 +351,7 @@ fun SettingsScreen(
                             }
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Configurar",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -145,6 +366,36 @@ fun SettingsScreen(
                 onDismiss = { viewModel.toggleAddAccountDialog(false) },
                 onConfirm = { name, type, balance, limit, cutoff, due, interest, digits ->
                     viewModel.addAccount(name, type, balance, limit, cutoff, due, interest, digits)
+                }
+            )
+        }
+
+        // Diálogo de Confirmación para Eliminar Cuenta
+        accountToDelete?.let { account ->
+            AlertDialog(
+                onDismissRequest = { accountToDelete = null },
+                title = { Text("Eliminar cuenta / instrumento") },
+                text = {
+                    Text(
+                        "¿Estás seguro de que deseas eliminar la cuenta \"${account.name}\"? " +
+                                "Esto desvinculará sus transacciones y eliminará de forma permanente sus tarjetas de crédito asociadas."
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.deleteAccount(account.id)
+                            accountToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Eliminar")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { accountToDelete = null }) {
+                        Text("Cancelar")
+                    }
                 }
             )
         }
@@ -170,6 +421,133 @@ fun SettingsScreen(
                 onSaveRule = { rule -> viewModel.saveCustomRule(rule) },
                 onDeleteRule = { id -> viewModel.deleteCustomRule(id) }
             )
+        }
+    }
+}
+
+private fun formatLastSyncTime(timestampMillis: Long): String {
+    val formatter = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
+    return formatter.format(Date(timestampMillis))
+}
+
+private fun requestLocalSecurityConfirmation(
+    context: Context,
+    title: String,
+    subtitle: String,
+    cancelMessage: String,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit
+) {
+    val activity = context.findFragmentActivity()
+    if (activity == null) {
+        onError("No se pudo abrir la confirmación de seguridad.")
+        return
+    }
+
+    LocalDeviceAuthenticator.authenticate(
+        activity = activity,
+        title = title,
+        subtitle = subtitle,
+        cancelMessage = cancelMessage,
+        onSuccess = onSuccess,
+        onError = onError
+    )
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun SecuritySettingsCard(
+    state: SettingsUiState,
+    securityMessage: String?,
+    isBusy: Boolean,
+    onAppLockToggle: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Seguridad local",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Protege la app con biometría o el PIN del celular.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = state.isAppLockEnabled,
+                    onCheckedChange = onAppLockToggle,
+                    enabled = !isBusy
+                )
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = if (state.isAppLockEnabled)
+                            "Activo: se pedirá desbloqueo al abrir la app y al volver tras estar en segundo plano."
+                        else
+                            "Inactivo: puedes activarlo cuando quieras pedir verificación al abrir la app.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Este bloqueo no reemplaza tu sesión de Google/Supabase; solo protege los datos locales ya descargados.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = securityMessage != null) {
+                securityMessage?.let { message ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (message.contains("activado", ignoreCase = true)) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+                        }
+                    ) {
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -497,7 +875,7 @@ private fun AutomationSettingsDialog(
                                         )
                                     }
                                 }
-                                Icon(Icons.Default.KeyboardArrowRight, null)
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
                             }
                         }
                     }
@@ -529,6 +907,8 @@ private fun AutomationSettingsDialog(
 @Composable
 private fun AccountItemRow(
     account: AccountEntity,
+    displayValue: String,
+    valueColor: androidx.compose.ui.graphics.Color,
     onDeleteClick: () -> Unit
 ) {
     Card(
@@ -550,7 +930,7 @@ private fun AccountItemRow(
                     AccountType.NEQUI -> Icons.Default.Smartphone
                     AccountType.DAVIPLATA -> Icons.Default.AccountBalanceWallet
                     AccountType.EFECTIVO -> Icons.Default.Payments
-                    AccountType.INVERSION -> Icons.Default.ShowChart
+                    AccountType.INVERSION -> Icons.AutoMirrored.Filled.ShowChart
                     else -> Icons.Default.AccountBalance
                 }
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -562,8 +942,9 @@ private fun AccountItemRow(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    formatCOP(account.currentBalance),
+                    displayValue,
                     style = MaterialTheme.typography.bodyLarge,
+                    color = valueColor,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.width(8.dp))
@@ -917,7 +1298,7 @@ private fun AddAccountDialog(
                                                     AccountType.NEQUI -> Icons.Default.Smartphone
                                                     AccountType.DAVIPLATA -> Icons.Default.AccountBalanceWallet
                                                     AccountType.EFECTIVO -> Icons.Default.Payments
-                                                    AccountType.INVERSION -> Icons.Default.ShowChart
+                                                    AccountType.INVERSION -> Icons.AutoMirrored.Filled.ShowChart
                                                     else -> Icons.Default.Wallet
                                                 }
                                                 Icon(

@@ -15,6 +15,7 @@ import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
+import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.CategoryEntity
@@ -24,11 +25,14 @@ import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
 import com.ivan.finanzapp.data.local.entity.MerchantCategoryMappingEntity
+import com.ivan.finanzapp.data.local.entity.NotificationSyncLedgerEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.data.local.entity.AssetEntity
 import com.ivan.finanzapp.data.local.dao.AssetDao
 import com.ivan.finanzapp.data.local.entity.CustomRuleEntity
 import com.ivan.finanzapp.data.local.dao.CustomRuleDao
+import com.ivan.finanzapp.data.local.entity.SyncDeleteLogEntity
+import com.ivan.finanzapp.data.local.dao.SyncDeleteLogDao
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
@@ -42,9 +46,11 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         LoanPaymentEntity::class,
         DeferredPurchaseEntity::class,
         AssetEntity::class,
-        CustomRuleEntity::class
+        CustomRuleEntity::class,
+        NotificationSyncLedgerEntity::class,
+        SyncDeleteLogEntity::class
     ],
-    version = 12,
+    version = 14,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -60,6 +66,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun deferredPurchaseDao(): DeferredPurchaseDao
     abstract fun assetDao(): AssetDao
     abstract fun customRuleDao(): CustomRuleDao
+    abstract fun notificationSyncLedgerDao(): NotificationSyncLedgerDao
+    abstract fun syncDeleteLogDao(): SyncDeleteLogDao
 
 
     companion object {
@@ -159,6 +167,142 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `notification_sync_ledger` (
+                        `id` TEXT NOT NULL,
+                        `packageName` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `text` TEXT NOT NULL,
+                        `postedAtMillis` INTEGER NOT NULL,
+                        `receivedAtMillis` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `statusReason` TEXT,
+                        `transactionId` TEXT,
+                        `accountId` TEXT,
+                        `categoryId` TEXT,
+                        `transactionType` TEXT,
+                        `amount` REAL,
+                        `merchant` TEXT,
+                        `bankSource` TEXT,
+                        `confidence` REAL,
+                        `classifierSource` TEXT,
+                        `errorMessage` TEXT,
+                        `processedAtMillis` INTEGER,
+                        `updatedAtMillis` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_sync_ledger_status` ON `notification_sync_ledger` (`status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_sync_ledger_postedAtMillis` ON `notification_sync_ledger` (`postedAtMillis`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_sync_ledger_receivedAtMillis` ON `notification_sync_ledger` (`receivedAtMillis`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_sync_ledger_transactionId` ON `notification_sync_ledger` (`transactionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_sync_ledger_packageName` ON `notification_sync_ledger` (`packageName`)")
+            }
+        }
+
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. Create table
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `sync_delete_log` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `tableName` TEXT NOT NULL,
+                        `recordId` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+
+                // 2. Create triggers
+                val tables = listOf(
+                    "accounts" to "id",
+                    "credit_cards" to "id",
+                    "categories" to "id",
+                    "transactions" to "id",
+                    "loans" to "id",
+                    "loan_payments" to "id",
+                    "deferred_purchases" to "id",
+                    "assets" to "id",
+                    "custom_rules" to "id",
+                    "notification_sync_ledger" to "id"
+                )
+                for ((table, pk) in tables) {
+                    db.execSQL(
+                        """
+                        CREATE TRIGGER IF NOT EXISTS `log_${table}_delete` AFTER DELETE ON `$table`
+                        BEGIN
+                            INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                            VALUES ('$table', OLD.`$pk`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                        END;
+                        """.trimIndent()
+                    )
+                }
+                
+                // For merchant_category_mappings (pk is merchantKey)
+                db.execSQL(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS `log_merchant_category_mappings_delete` AFTER DELETE ON `merchant_category_mappings`
+                    BEGIN
+                        INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                        VALUES ('merchant_category_mappings', OLD.`merchantKey`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                    END;
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val DB_CALLBACK = object : RoomDatabase.Callback() {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                super.onCreate(db)
+                createTriggers(db)
+            }
+
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                createTriggers(db)
+            }
+
+            private fun createTriggers(db: SupportSQLiteDatabase) {
+                val tables = listOf(
+                    "accounts" to "id",
+                    "credit_cards" to "id",
+                    "categories" to "id",
+                    "transactions" to "id",
+                    "loans" to "id",
+                    "loan_payments" to "id",
+                    "deferred_purchases" to "id",
+                    "assets" to "id",
+                    "custom_rules" to "id",
+                    "notification_sync_ledger" to "id"
+                )
+                for ((table, pk) in tables) {
+                    db.execSQL(
+                        """
+                        CREATE TRIGGER IF NOT EXISTS `log_${table}_delete` AFTER DELETE ON `$table`
+                        BEGIN
+                            INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                            VALUES ('$table', OLD.`$pk`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                        END;
+                        """.trimIndent()
+                    )
+                }
+                db.execSQL(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS `log_merchant_category_mappings_delete` AFTER DELETE ON `merchant_category_mappings`
+                    BEGIN
+                        INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                        VALUES ('merchant_category_mappings', OLD.`merchantKey`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                    END;
+                    """.trimIndent()
+                )
+            }
+        }
+
         /**
          * Crea (o retorna) la instancia única de la base de datos, cifrada
          * con SQLCipher usando [passphrase].
@@ -170,8 +314,22 @@ abstract class AppDatabase : RoomDatabase() {
          */
         fun getInstance(context: Context, passphrase: ByteArray): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: build(context, passphrase).also { INSTANCE = it }
+                INSTANCE ?: build(context, passphrase).also { db ->
+                    INSTANCE = db
+                    db.registerWidgetUpdateObserver(context.applicationContext)
+                }
             }
+        }
+
+        private fun AppDatabase.registerWidgetUpdateObserver(context: Context) {
+            val observer = object : androidx.room.InvalidationTracker.Observer(
+                arrayOf("accounts", "credit_cards", "deferred_purchases", "transactions", "categories", "loans")
+            ) {
+                override fun onInvalidated(tables: Set<String>) {
+                    com.ivan.finanzapp.ui.widget.WidgetUpdater.updateAllWidgets(context)
+                }
+            }
+            this.invalidationTracker.addObserver(observer)
         }
 
         private fun build(context: Context, passphrase: ByteArray): AppDatabase {
@@ -186,8 +344,11 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
-                    MIGRATION_11_12
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14
                 )
+                .addCallback(DB_CALLBACK)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
         }

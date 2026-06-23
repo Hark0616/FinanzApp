@@ -46,6 +46,7 @@ fun LoansScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedLoanForPayment by remember { mutableStateOf<LoanEntity?>(null) }
+    var loanToDelete by remember { mutableStateOf<LoanEntity?>(null) }
 
     Scaffold(
         floatingActionButton = {
@@ -102,7 +103,7 @@ fun LoansScreen(
                             loan = loan,
                             lastPayment = state.latestPaymentsByLoanId[loan.id],
                             onPayClick = { selectedLoanForPayment = loan },
-                            onDeleteClick = { viewModel.deleteLoan(loan.id) }
+                            onDeleteClick = { loanToDelete = loan }
                         )
                     }
                 }
@@ -244,6 +245,31 @@ fun LoansScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { selectedLoanForPayment = null }) {
+                        Text("Cancelar")
+                    }
+                }
+            )
+        }
+
+        // Diálogo de Confirmación de Eliminación de Crédito
+        loanToDelete?.let { loan ->
+            AlertDialog(
+                onDismissRequest = { loanToDelete = null },
+                title = { Text("Eliminar crédito") },
+                text = { Text("¿Estás seguro de que deseas eliminar el crédito \"${loan.name}\"? Esta acción no se puede deshacer y borrará todo su historial de pagos.") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.deleteLoan(loan.id)
+                            loanToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Eliminar")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { loanToDelete = null }) {
                         Text("Cancelar")
                     }
                 }
@@ -665,12 +691,12 @@ private fun AddLoanDialog(
     var expanded by remember { mutableStateOf(false) }
     var selectedAccount by remember { mutableStateOf<AccountEntity?>(null) }
 
-    val parsedTotalAmount = totalAmount.toDoubleOrNull()
-    val parsedInterestRate = interestRate.toDoubleOrNull()
+    val parsedTotalAmount = totalAmount.replace(',', '.').toDoubleOrNull()
+    val parsedInterestRate = interestRate.replace(',', '.').toDoubleOrNull()
     val parsedInstallments = totalInstallments.toIntOrNull()
-    val parsedMonthlyInstallment = monthlyInstallment.toDoubleOrNull()
-    val parsedMonthlyInsurance = monthlyInsurance.toDoubleOrNull()
-    val parsedMonthlyFee = monthlyFee.toDoubleOrNull()
+    val parsedMonthlyInstallment = monthlyInstallment.replace(',', '.').toDoubleOrNull()
+    val parsedMonthlyInsurance = monthlyInsurance.replace(',', '.').toDoubleOrNull()
+    val parsedMonthlyFee = monthlyFee.replace(',', '.').toDoubleOrNull()
     val normalizedMonthlyInsurance = parsedMonthlyInsurance ?: 0.0
     val normalizedMonthlyFee = parsedMonthlyFee ?: 0.0
     val parsedPaymentDay = paymentDay.toIntOrNull()

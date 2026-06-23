@@ -1,18 +1,25 @@
 package com.ivan.finanzapp.data.notification
 
+import androidx.room.withTransaction
+import com.ivan.finanzapp.data.local.AppDatabase
 import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
-import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
-import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.dao.CustomRuleDao
-import com.ivan.finanzapp.data.notification.parsers.ParsedTransaction
-import com.ivan.finanzapp.data.notification.parsers.ParserUtils
+import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
+import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
+import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
+import com.ivan.finanzapp.data.local.entity.NotificationProcessingStatus
+import com.ivan.finanzapp.data.local.entity.NotificationSyncLedgerEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
+import com.ivan.finanzapp.data.notification.parsers.ParsedTransaction
 import com.ivan.finanzapp.data.notification.parsers.ParserDispatcher
+import com.ivan.finanzapp.data.notification.parsers.ParserUtils
 import com.ivan.finanzapp.data.remote.LocalAiClassifier
+import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.data.remote.TransactionAiClassifier
+import com.ivan.finanzapp.data.security.SecureLog
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.domain.usecase.AccountResolver
@@ -20,27 +27,36 @@ import com.ivan.finanzapp.domain.usecase.CategoryResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.util.UUID
+import android.content.Context
+import androidx.glance.appwidget.updateAll
+import com.ivan.finanzapp.ui.widget.FinanzAppWidget
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val LOW_CONFIDENCE_THRESHOLD = 0.65
+private const val SOURCE_RULES = "RULES"
+private const val SOURCE_CUSTOM_RULE = "CUSTOM_RULE"
+private const val SOURCE_LOCAL_AI = "LOCAL_AI"
+private const val SOURCE_CLOUD_AI = "CLOUD_AI"
 
 /**
  * Orquesta el pipeline completo de procesamiento de notificaciones:
  *
- * 1. Filtra notificaciones irrelevantes (paquetes no bancarios).
- * 2. Intenta parsear con [ParserDispatcher] (reglas locales, Nivel 1).
- * 3. Si falla, llama a [TransactionAiClassifier] (LLM, Nivel 3).
- * 4. Resuelve categoría con [CategoryResolver].
- * 5. Resuelve cuenta con [AccountResolver].
- * 6. Deduplica usando hash determinístico.
- * 7. Persiste en Room.
- * 8. Actualiza saldo de la cuenta y deuda de la tarjeta de crédito si aplica.
+ * 1. Registra la notificacion bancaria cruda en el ledger con estado RECEIVED.
+ * 2. Filtra notificaciones no procesables y las marca como IGNORED.
+ * 3. Intenta parsear con [ParserDispatcher] (reglas locales, Nivel 1).
+ * 4. Intenta reglas personalizadas del usuario.
+ * 5. Si falla, usa IA local o nube segun configuracion.
+ * 6. Persiste transaccion, saldos, tarjeta y estado final del ledger dentro
+ *    de una sola transaccion Room.
  */
 @Singleton
 class TransactionProcessor @Inject constructor(
+    @param:ApplicationContext private val context: Context,
+    private val database: AppDatabase,
     private val parserDispatcher: ParserDispatcher,
     private val aiClassifier: TransactionAiClassifier,
     private val localAiClassifier: LocalAiClassifier,
@@ -52,17 +68,16 @@ class TransactionProcessor @Inject constructor(
     private val accountDao: AccountDao,
     private val creditCardDao: CreditCardDao,
     private val deferredPurchaseDao: DeferredPurchaseDao,
-    private val calculator: CreditCardCalculator
+    private val notificationSyncLedgerDao: NotificationSyncLedgerDao,
+    private val calculator: CreditCardCalculator,
+    private val cloudSyncScheduler: CloudSyncScheduler
 ) {
 
-    // Scope propio para no bloquear el NotificationListenerService
     private val processorScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
-     * Punto de entrada: llamado desde [TransactionNotificationListenerService]
-     * por cada notificación que llega de un paquete bancario.
-     *
-     * Es no-bloqueante: lanza una coroutine en [processorScope].
+     * Punto de entrada no bloqueante llamado desde [TransactionNotificationListenerService].
+     * La primera escritura es siempre el ledger crudo, antes de parsear.
      */
     fun processAsync(
         packageName: String,
@@ -70,175 +85,331 @@ class TransactionProcessor @Inject constructor(
         text: String,
         postedAtMillis: Long = System.currentTimeMillis()
     ) {
-        if (!parserDispatcher.isSupportedPackage(packageName)) return
-
         processorScope.launch {
-            process(packageName, title, text, postedAtMillis)
+            if (!parserDispatcher.isSupportedPackage(packageName)) {
+                return@launch
+            }
+
+            val receivedAtMillis = System.currentTimeMillis()
+            val ledgerEntry = NotificationSyncLedgerEntity(
+                id = UUID.randomUUID().toString(),
+                packageName = packageName,
+                title = title,
+                text = text,
+                postedAtMillis = postedAtMillis,
+                receivedAtMillis = receivedAtMillis,
+                updatedAtMillis = receivedAtMillis
+            )
+
+            var ledgerPersisted = false
+            var shouldScheduleSync = false
+            try {
+                notificationSyncLedgerDao.insert(ledgerEntry)
+                ledgerPersisted = true
+                shouldScheduleSync = true
+                process(ledgerEntry)
+                
+                try {
+                    FinanzAppWidget().updateAll(context)
+                } catch (widgetError: Throwable) {
+                    SecureLog.w("TransactionProcessor", "Widget update failed after notification processing.", widgetError)
+                }
+            } catch (error: Throwable) {
+                if (ledgerPersisted) {
+                    notificationSyncLedgerDao.update(
+                        ledgerEntry.withStatus(
+                            status = NotificationProcessingStatus.FAILED,
+                            reason = "processing_exception",
+                            errorMessage = error.toLedgerError()
+                        )
+                    )
+                }
+            } finally {
+                if (shouldScheduleSync) {
+                    cloudSyncScheduler.syncSoon()
+                }
+            }
         }
     }
 
-    private suspend fun process(
-        packageName: String,
-        title: String,
-        text: String,
-        postedAtMillis: Long
-    ) {
-        // Paso 1: intentar con parsers por reglas
-        var parsed = parserDispatcher.dispatch(packageName, title, text)
-        var aiCategoryName: String? = null
-        var usedAi = false
-
-        // Paso 1.5: intentar con reglas personalizadas creadas por el usuario
-        if (parsed == null) {
-            try {
-                val customRules = customRuleDao.getAll()
-                val fullMessage = "$title $text"
-                for (rule in customRules) {
-                    val regex = Regex(rule.regexPattern, RegexOption.IGNORE_CASE)
-                    val matchResult = regex.find(fullMessage)
-                    if (matchResult != null) {
-                        val amountGroup = matchResult.groups["amount"]
-                        if (amountGroup != null) {
-                            val amountStr = amountGroup.value
-                            val amount = when (rule.amountFormatType) {
-                                0 -> parseLatAmAmount(amountStr)
-                                1 -> parseUSAmount(amountStr)
-                                2 -> parsePlainAmount(amountStr)
-                                else -> ParserUtils.parseAmount(amountStr)
-                            }
-                            if (amount != null) {
-                                val merchantGroup = matchResult.groups["merchant"]
-                                val merchant = merchantGroup?.value ?: "Transacción Personalizada"
-
-                                val txType = try {
-                                    TransactionType.valueOf(rule.transactionType)
-                                } catch (e: Exception) {
-                                    TransactionType.GASTO
-                                }
-
-                                val bankSource = try {
-                                    com.ivan.finanzapp.domain.model.BankSource.valueOf(rule.bankSource)
-                                } catch (e: Exception) {
-                                    com.ivan.finanzapp.domain.model.BankSource.DESCONOCIDO
-                                }
-
-                                parsed = ParsedTransaction(
-                                    type = txType,
-                                    amount = amount,
-                                    merchant = merchant,
-                                    availableBalance = null,
-                                    source = bankSource,
-                                    confidence = 1.0 // Al ser configurado manualmente por el usuario, tiene confianza absoluta
-                                )
-                                break
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                // Si falla la búsqueda de reglas, ignoramos y continuamos
-            }
-        }
-
-        // Paso 2: fallback de IA si las reglas no matchearon
-        if (parsed == null) {
-            val mode = securePrefs.getNotificationProcessingMode()
-            if (mode == SecurePrefs.MODE_LOCAL_AI || mode == SecurePrefs.MODE_PARSER) {
-                // Fallback 1: Intentar con IA local en dispositivo (ej. Gemini Nano en S26 Ultra)
-                val localResult = localAiClassifier.classifyLocally(packageName, title, text)
-                if (localResult != null) {
-                    parsed = localResult.first
-                    aiCategoryName = localResult.second
-                    usedAi = true
-                } else if (mode == SecurePrefs.MODE_PARSER) {
-                    // Fallback 2: Si falla o no está disponible la IA local, recurrir a la nube
-                    val aiResult = aiClassifier.classifyWithCategory(packageName, title, text)
-                    if (aiResult != null) {
-                        parsed = aiResult.first
-                        aiCategoryName = aiResult.second
-                        usedAi = true
-                    }
-                }
-            } else if (mode == SecurePrefs.MODE_CLOUD_AI) {
-                // Fallback directo a IA en la nube (OpenRouter) sin probar la IA local
-                val aiResult = aiClassifier.classifyWithCategory(packageName, title, text)
-                if (aiResult != null) {
-                    parsed = aiResult.first
-                    aiCategoryName = aiResult.second
-                    usedAi = true
-                }
-            }
-        }
-
-        // Si ni reglas ni IA pudieron parsear, ignoramos la notificación
-        // (probablemente es una notificación promocional, no transaccional)
-        val transaction = parsed ?: return
-
-        // Paso 3: resolver categoría (niveles 1, 2 y 3 ya coordinados en CategoryResolver)
-        val categoryId = categoryResolver.resolve(transaction.merchant, aiCategoryName)
-
-        // Paso 4: resolver cuenta
-        val fullMessage = "$title $text"
-        val accountId = accountResolver.resolveAccountId(transaction.source, transaction.type, fullMessage)
-
-        // Paso 5: generar id determinístico para deduplicación
-        val id = TransactionIdGenerator.generate(
-            packageName = packageName,
-            amount = transaction.amount,
-            merchant = transaction.merchant,
-            timestampMillis = postedAtMillis
+    private suspend fun process(ledgerEntry: NotificationSyncLedgerEntity) {
+        SecureLog.d(
+            "TransactionProcessor",
+            "Processing notification: package=${ledgerEntry.packageName}, textLength=${ledgerEntry.text.length}"
         )
 
-        // Paso 6: construir y persistir la entidad
-        val entity = TransactionEntity(
-            id = id,
-            accountId = accountId,
-            amount = transaction.amount,
-            type = transaction.type,
-            merchant = transaction.merchant,
-            categoryId = categoryId,
-            rawNotification = "[$packageName] $title | $text",
-            timestamp = postedAtMillis,
-            confirmedByAI = usedAi,
-            needsReview = transaction.confidence < LOW_CONFIDENCE_THRESHOLD
+        if (ledgerEntry.title.isBlank() && ledgerEntry.text.isBlank()) {
+            SecureLog.d("TransactionProcessor", "Processing ignored: empty_notification")
+            notificationSyncLedgerDao.update(
+                ledgerEntry.withStatus(
+                    status = NotificationProcessingStatus.IGNORED,
+                    reason = "empty_notification"
+                )
+            )
+            return
+        }
+
+        val parsedResult = parseNotification(ledgerEntry)
+        if (parsedResult == null) {
+            SecureLog.d("TransactionProcessor", "Processing ignored: no_transaction_detected")
+            notificationSyncLedgerDao.update(
+                ledgerEntry.withStatus(
+                    status = NotificationProcessingStatus.IGNORED,
+                    reason = "no_transaction_detected"
+                )
+            )
+            return
+        }
+
+        val transaction = parsedResult.transaction
+        SecureLog.d(
+            "TransactionProcessor",
+            "Parsed successfully: type=${transaction.type}, source=${transaction.source}, classifierSource=${parsedResult.classifierSource}"
         )
+        
+        val fullMessage = "${ledgerEntry.title} ${ledgerEntry.text}"
 
-        val inserted = transactionDao.insertIfNotExists(entity)
+        database.withTransaction {
+            val categoryId = categoryResolver.resolve(
+                merchant = transaction.merchant,
+                suggestedFromAi = parsedResult.aiCategoryName
+            )
+            val accountId = accountResolver.resolveAccountId(
+                source = transaction.source,
+                type = transaction.type,
+                rawNotificationText = fullMessage
+            )
+            val transactionId = TransactionIdGenerator.generate(
+                packageName = ledgerEntry.packageName,
+                amount = transaction.amount,
+                merchant = transaction.merchant,
+                timestampMillis = ledgerEntry.postedAtMillis
+            )
 
-        // Si inserted == 0, era un duplicado; no actualizamos saldos
-        if (inserted == 0L) return
+            val entity = TransactionEntity(
+                id = transactionId,
+                accountId = accountId,
+                amount = transaction.amount,
+                type = transaction.type,
+                merchant = transaction.merchant,
+                categoryId = categoryId,
+                rawNotification = "[${ledgerEntry.packageName}] ${ledgerEntry.title} | ${ledgerEntry.text}",
+                timestamp = ledgerEntry.postedAtMillis,
+                confirmedByAI = parsedResult.classifierSource == SOURCE_LOCAL_AI ||
+                        parsedResult.classifierSource == SOURCE_CLOUD_AI,
+                needsReview = transaction.confidence < LOW_CONFIDENCE_THRESHOLD
+            )
 
-        // Paso 7: actualizar saldo de la cuenta
-        if (accountId != null) {
-            when (transaction.type) {
-                TransactionType.INGRESO -> {
-                    if (transaction.availableBalance != null) {
-                        accountDao.setAbsoluteBalance(accountId, transaction.availableBalance)
-                    } else {
-                        accountDao.adjustBalance(accountId, +transaction.amount)
-                    }
-                }
-                TransactionType.GASTO, TransactionType.TRANSFERENCIA -> {
-                    if (transaction.availableBalance != null) {
-                        accountDao.setAbsoluteBalance(accountId, transaction.availableBalance)
-                    } else {
-                        accountDao.adjustBalance(accountId, -transaction.amount)
-                    }
-                }
-                TransactionType.GASTO_TC -> {
-                    // Para tarjeta de crédito: registrar compra diferida a 1 cuota y recalcular deuda
-                    registerDeferredPurchaseFromNotification(
-                        accountId = accountId,
-                        transactionId = id,
-                        merchant = transaction.merchant ?: "Comercio desconocido",
-                        amount = transaction.amount,
-                        purchaseDate = postedAtMillis
+            val inserted = transactionDao.insertIfNotExists(entity)
+            val parsedLedgerEntry = ledgerEntry.withParsedTransaction(
+                status = if (inserted == 0L) {
+                    NotificationProcessingStatus.DUPLICATE
+                } else {
+                    NotificationProcessingStatus.PARSED
+                },
+                reason = if (inserted == 0L) "duplicate_transaction_id" else null,
+                transactionId = transactionId,
+                accountId = accountId,
+                categoryId = categoryId,
+                transaction = transaction,
+                classifierSource = parsedResult.classifierSource
+            )
+
+            if (inserted == 0L) {
+                notificationSyncLedgerDao.update(parsedLedgerEntry)
+                return@withTransaction
+            }
+
+            applyFinancialSideEffects(
+                transaction = transaction,
+                transactionId = transactionId,
+                accountId = accountId,
+                postedAtMillis = ledgerEntry.postedAtMillis
+            )
+            notificationSyncLedgerDao.update(parsedLedgerEntry)
+        }
+    }
+
+    private suspend fun parseNotification(
+        ledgerEntry: NotificationSyncLedgerEntity
+    ): ParsedNotificationResult? {
+        parserDispatcher.dispatch(ledgerEntry.packageName, ledgerEntry.title, ledgerEntry.text)
+            ?.let { parsed ->
+                return ParsedNotificationResult(
+                    transaction = parsed,
+                    aiCategoryName = null,
+                    classifierSource = SOURCE_RULES
+                )
+            }
+
+        parseWithCustomRules(ledgerEntry.title, ledgerEntry.text)?.let { parsed ->
+            return ParsedNotificationResult(
+                transaction = parsed,
+                aiCategoryName = null,
+                classifierSource = SOURCE_CUSTOM_RULE
+            )
+        }
+
+        val mode = securePrefs.getNotificationProcessingMode()
+        if (mode == SecurePrefs.MODE_LOCAL_AI || mode == SecurePrefs.MODE_PARSER) {
+            val localResult = localAiClassifier.classifyLocally(
+                ledgerEntry.packageName,
+                ledgerEntry.title,
+                ledgerEntry.text
+            )
+            if (localResult != null) {
+                return ParsedNotificationResult(
+                    transaction = localResult.first,
+                    aiCategoryName = localResult.second,
+                    classifierSource = SOURCE_LOCAL_AI
+                )
+            }
+
+            if (mode == SecurePrefs.MODE_PARSER) {
+                val cloudResult = aiClassifier.classifyWithCategory(
+                    ledgerEntry.packageName,
+                    ledgerEntry.title,
+                    ledgerEntry.text
+                )
+                if (cloudResult != null) {
+                    return ParsedNotificationResult(
+                        transaction = cloudResult.first,
+                        aiCategoryName = cloudResult.second,
+                        classifierSource = SOURCE_CLOUD_AI
                     )
                 }
-                TransactionType.PAGO_TC -> {
-                    // Para tarjeta de crédito: distribuir el pago entre las compras diferidas y recalcular
-                    registerPaymentFromNotification(accountId, transaction.amount)
+            }
+        } else if (mode == SecurePrefs.MODE_CLOUD_AI) {
+            val cloudResult = aiClassifier.classifyWithCategory(
+                ledgerEntry.packageName,
+                ledgerEntry.title,
+                ledgerEntry.text
+            )
+            if (cloudResult != null) {
+                return ParsedNotificationResult(
+                    transaction = cloudResult.first,
+                    aiCategoryName = cloudResult.second,
+                    classifierSource = SOURCE_CLOUD_AI
+                )
+            }
+        }
+
+        return null
+    }
+
+    private suspend fun parseWithCustomRules(title: String, text: String): ParsedTransaction? {
+        val customRules = customRuleDao.getAll()
+        val fullMessage = "$title $text"
+        SecureLog.d("TransactionProcessor", "Evaluating custom rules. Count: ${customRules.size}")
+
+        for (rule in customRules) {
+            SecureLog.d("TransactionProcessor", "Evaluating rule '${rule.name}'")
+            val regex = compileCustomRuleRegex(rule.regexPattern)
+            if (regex == null) {
+                SecureLog.d("TransactionProcessor", "Rule '${rule.name}' has invalid regex pattern")
+                continue
+            }
+            val matchResult = regex.find(fullMessage)
+            if (matchResult == null) {
+                SecureLog.d("TransactionProcessor", "Rule '${rule.name}' pattern did not match message")
+                continue
+            }
+            val amountGroup = matchResult.groups["amount"]
+            if (amountGroup == null) {
+                SecureLog.d("TransactionProcessor", "Rule '${rule.name}' matched, but group 'amount' was not captured")
+                continue
+            }
+            SecureLog.d("TransactionProcessor", "Rule '${rule.name}' matched")
+
+            val amount = when (rule.amountFormatType) {
+                0 -> parseLatAmAmount(amountGroup.value)
+                1 -> parseUSAmount(amountGroup.value)
+                2 -> parsePlainAmount(amountGroup.value)
+                else -> ParserUtils.parseAmount(amountGroup.value)
+            }
+            if (amount == null) {
+                SecureLog.d("TransactionProcessor", "Rule '${rule.name}' failed to parse amount '${amountGroup.value}' using format type ${rule.amountFormatType}")
+                continue
+            }
+
+            val txType = runCatching { TransactionType.valueOf(rule.transactionType) }
+                .getOrDefault(TransactionType.GASTO)
+            val bankSource = runCatching {
+                com.ivan.finanzapp.domain.model.BankSource.valueOf(rule.bankSource)
+            }.getOrDefault(com.ivan.finanzapp.domain.model.BankSource.DESCONOCIDO)
+
+            return ParsedTransaction(
+                type = txType,
+                amount = amount,
+                merchant = matchResult.groups["merchant"]?.value ?: "Transaccion Personalizada",
+                availableBalance = null,
+                source = bankSource,
+                confidence = 1.0
+            )
+        }
+
+        return null
+    }
+
+    private fun compileCustomRuleRegex(pattern: String): Regex? =
+        runCatching {
+            Regex(deduplicateNamedCaptureGroups(pattern), RegexOption.IGNORE_CASE)
+        }.getOrNull()
+
+    private fun deduplicateNamedCaptureGroups(pattern: String): String {
+        var normalized = pattern
+        for (groupName in listOf("amount", "merchant")) {
+            var seen = false
+            normalized = Regex("""\(\?<$groupName>""").replace(normalized) {
+                if (seen) {
+                    "(?:"
+                } else {
+                    seen = true
+                    it.value
                 }
+            }
+        }
+        return normalized
+    }
+
+    private suspend fun applyFinancialSideEffects(
+        transaction: ParsedTransaction,
+        transactionId: String,
+        accountId: String?,
+        postedAtMillis: Long
+    ) {
+        if (accountId == null) return
+
+        when (transaction.type) {
+            TransactionType.INGRESO -> {
+                if (transaction.availableBalance != null) {
+                    accountDao.setAbsoluteBalance(accountId, transaction.availableBalance)
+                } else {
+                    accountDao.adjustBalance(accountId, +transaction.amount)
+                }
+            }
+
+            TransactionType.GASTO,
+            TransactionType.TRANSFERENCIA -> {
+                if (transaction.availableBalance != null) {
+                    accountDao.setAbsoluteBalance(accountId, transaction.availableBalance)
+                } else {
+                    accountDao.adjustBalance(accountId, -transaction.amount)
+                }
+            }
+
+            TransactionType.GASTO_TC -> {
+                registerDeferredPurchaseFromNotification(
+                    accountId = accountId,
+                    transactionId = transactionId,
+                    merchant = transaction.merchant ?: "Comercio desconocido",
+                    amount = transaction.amount,
+                    purchaseDate = postedAtMillis
+                )
+            }
+
+            TransactionType.PAGO_TC -> {
+                registerPaymentFromNotification(accountId, transaction.amount)
             }
         }
     }
@@ -266,7 +437,7 @@ class TransactionProcessor @Inject constructor(
 
     private suspend fun registerPaymentFromNotification(accountId: String, amount: Double) {
         val card = creditCardDao.getByAccountId(accountId) ?: return
-        val purchases = deferredPurchaseDao.observeByCardId(card.id).first()
+        val purchases = deferredPurchaseDao.getByCardIdSnapshot(card.id)
         val result = calculator.distributePayment(amount, purchases)
 
         for (updated in result.updatedPurchases) {
@@ -280,11 +451,10 @@ class TransactionProcessor @Inject constructor(
     }
 
     private suspend fun recalculateCardDebt(cardId: String) {
-        val purchases = deferredPurchaseDao.observeByCardId(cardId).first()
-        val card = creditCardDao.observeAll().first().find { it.id == cardId } ?: return
+        val purchases = deferredPurchaseDao.getByCardIdSnapshot(cardId)
+        val card = creditCardDao.getById(cardId) ?: return
         val newDebt = calculator.totalDeferredDebt(purchases)
-        val updatedCard = card.copy(currentDebt = newDebt)
-        creditCardDao.update(updatedCard)
+        creditCardDao.update(card.copy(currentDebt = newDebt))
     }
 
     private fun parseLatAmAmount(raw: String): Double? {
@@ -292,10 +462,8 @@ class TransactionProcessor @Inject constructor(
         val dotIndex = clean.lastIndexOf('.')
         val commaIndex = clean.lastIndexOf(',')
         return if (commaIndex > dotIndex) {
-            // 1.234.567,89 -> remove dots, replace comma with dot
             clean.replace(".", "").replace(",", ".").toDoubleOrNull()
         } else if (commaIndex == -1 && dotIndex != -1) {
-            // Solo tiene puntos, ej: 408.500. Como es LatAm, el punto es miles
             clean.replace(".", "").toDoubleOrNull()
         } else {
             clean.replace(",", ".").toDoubleOrNull()
@@ -307,10 +475,8 @@ class TransactionProcessor @Inject constructor(
         val dotIndex = clean.lastIndexOf('.')
         val commaIndex = clean.lastIndexOf(',')
         return if (dotIndex > commaIndex) {
-            // 1,234,567.89 -> remove commas
             clean.replace(",", "").toDoubleOrNull()
         } else if (dotIndex == -1 && commaIndex != -1) {
-            // Solo tiene comas, ej: 408,500. Como es US, es miles
             clean.replace(",", "").toDoubleOrNull()
         } else {
             clean.toDoubleOrNull()
@@ -318,8 +484,60 @@ class TransactionProcessor @Inject constructor(
     }
 
     private fun parsePlainAmount(raw: String): Double? {
-        // Solo números enteros, removemos cualquier separador
         val clean = raw.replace(Regex("""[^\d]"""), "")
         return clean.toDoubleOrNull()
     }
+
+    private fun NotificationSyncLedgerEntity.withStatus(
+        status: NotificationProcessingStatus,
+        reason: String?,
+        errorMessage: String? = null
+    ): NotificationSyncLedgerEntity {
+        val now = System.currentTimeMillis()
+        return copy(
+            status = status,
+            statusReason = reason,
+            errorMessage = errorMessage,
+            processedAtMillis = now,
+            updatedAtMillis = now
+        )
+    }
+
+    private fun NotificationSyncLedgerEntity.withParsedTransaction(
+        status: NotificationProcessingStatus,
+        reason: String?,
+        transactionId: String,
+        accountId: String?,
+        categoryId: String?,
+        transaction: ParsedTransaction,
+        classifierSource: String
+    ): NotificationSyncLedgerEntity {
+        val now = System.currentTimeMillis()
+        return copy(
+            status = status,
+            statusReason = reason,
+            transactionId = transactionId,
+            accountId = accountId,
+            categoryId = categoryId,
+            transactionType = transaction.type.name,
+            amount = transaction.amount,
+            merchant = transaction.merchant,
+            bankSource = transaction.source.name,
+            confidence = transaction.confidence,
+            classifierSource = classifierSource,
+            processedAtMillis = now,
+            updatedAtMillis = now
+        )
+    }
+
+    private fun Throwable.toLedgerError(): String {
+        val message = "${this::class.java.simpleName}: ${message.orEmpty()}"
+        return message.take(500)
+    }
 }
+
+private data class ParsedNotificationResult(
+    val transaction: ParsedTransaction,
+    val aiCategoryName: String?,
+    val classifierSource: String
+)

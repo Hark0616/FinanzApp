@@ -7,6 +7,7 @@ import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
+import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.domain.calculator.LoanCalculator
 import com.ivan.finanzapp.domain.model.LoanAmortizationType
 import com.ivan.finanzapp.domain.model.LoanInterestRateType
@@ -31,7 +32,8 @@ class LoansViewModel @Inject constructor(
     private val accountDao: AccountDao,
     private val loanPaymentDao: LoanPaymentDao,
     private val loanPaymentRegistrar: LoanPaymentRegistrar,
-    private val loanCalculator: LoanCalculator
+    private val loanCalculator: LoanCalculator,
+    private val cloudSyncScheduler: CloudSyncScheduler
 ) : ViewModel() {
 
     private val _isAddDialogVisible = MutableStateFlow(false)
@@ -145,6 +147,7 @@ class LoansViewModel @Inject constructor(
             )
             loanDao.upsert(loan)
             toggleAddDialog(false)
+            cloudSyncScheduler.syncSoon()
         }
     }
 
@@ -157,12 +160,14 @@ class LoansViewModel @Inject constructor(
                 loanId = loan.id,
                 actualPaymentAmount = actualPaymentAmount
             )
+            cloudSyncScheduler.syncSoon()
         }
     }
 
     fun deleteLoan(loanId: String) {
         viewModelScope.launch {
             loanDao.delete(loanId)
+            cloudSyncScheduler.syncSoon()
         }
     }
 }

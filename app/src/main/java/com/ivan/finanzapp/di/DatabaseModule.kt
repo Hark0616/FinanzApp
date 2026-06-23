@@ -11,6 +11,7 @@ import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
+import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import dagger.Module
 import dagger.Provides
@@ -18,6 +19,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
+
+import com.ivan.finanzapp.data.local.dao.SyncDeleteLogDao
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -68,4 +71,12 @@ object DatabaseModule {
 
     @Provides
     fun provideCustomRuleDao(db: AppDatabase): com.ivan.finanzapp.data.local.dao.CustomRuleDao = db.customRuleDao()
+
+    @Provides
+    fun provideNotificationSyncLedgerDao(db: AppDatabase): NotificationSyncLedgerDao =
+        db.notificationSyncLedgerDao()
+
+    @Provides
+    fun provideSyncDeleteLogDao(db: AppDatabase): SyncDeleteLogDao =
+        db.syncDeleteLogDao()
 }

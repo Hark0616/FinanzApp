@@ -41,15 +41,20 @@ private enum class TransactionFilter {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(
+    action: String? = null,
     viewModel: TransactionsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
-    var activeFilter by remember { mutableStateOf(TransactionFilter.ALL) }
+    var activeFilter by remember { mutableStateOf(
+        if (action == "view_unclassified") TransactionFilter.UNCLASSIFIED else TransactionFilter.ALL
+    ) }
 
     var selectedTransactionForEdit by remember { mutableStateOf<TransactionWithCategory?>(null) }
     var categoryDialogExpanded by remember { mutableStateOf(false) }
+
+    var addTransactionDialogVisible by remember { mutableStateOf(action == "add_expense") }
 
     val filteredTransactions = remember(state.transactions, searchQuery, activeFilter) {
         state.transactions.filter { item ->
@@ -66,7 +71,17 @@ fun TransactionsScreen(
         }
     }
 
-    Scaffold { innerPadding ->
+    Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { addTransactionDialogVisible = true },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Registrar Gasto")
+            }
+        }
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -354,7 +369,182 @@ fun TransactionsScreen(
                 )
             }
         }
+
+        // Diálogo para registrar gasto manual
+        if (addTransactionDialogVisible) {
+            AddTransactionDialog(
+                accounts = state.accounts,
+                categories = state.categories,
+                onDismiss = { addTransactionDialogVisible = false },
+                onConfirm = { amount, merchant, typeStr, accountId, categoryId ->
+                    viewModel.addManualTransaction(amount, merchant, typeStr, accountId, categoryId)
+                }
+            )
+        }
     }
+}
+
+@Composable
+fun AddTransactionDialog(
+    accounts: List<AccountEntity>,
+    categories: List<CategoryEntity>,
+    onDismiss: () -> Unit,
+    onConfirm: (amount: Double, merchant: String, typeStr: String, accountId: String?, categoryId: String?) -> Unit
+) {
+    var amountStr by remember { mutableStateOf("") }
+    var merchant by remember { mutableStateOf("") }
+    var selectedType by remember { mutableStateOf("Gasto") } // "Gasto" o "Ingreso"
+    var selectedAccountId by remember { mutableStateOf<String?>(null) }
+    var selectedCategoryId by remember { mutableStateOf<String?>(null) }
+
+    var accountDropdownExpanded by remember { mutableStateOf(false) }
+    var categoryDropdownExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Registrar Movimiento", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Selector de Tipo (Gasto / Ingreso)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("Gasto", "Ingreso").forEach { type ->
+                        val isSelected = selectedType == type
+                        Button(
+                            onClick = { selectedType = type },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(type)
+                        }
+                    }
+                }
+
+                // Campo de Monto
+                OutlinedTextField(
+                    value = amountStr,
+                    onValueChange = { amountStr = it.filter { char -> char.isDigit() } },
+                    label = { Text("Monto ($)") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                // Campo de Comercio
+                OutlinedTextField(
+                    value = merchant,
+                    onValueChange = { merchant = it },
+                    label = { Text("Comercio / Descripción") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                // Selector de Cuenta
+                val currentAccountName = selectedAccountId?.let { id -> accounts.find { it.id == id }?.name } ?: "Sin asignar (Pendiente)"
+                Text("Cuenta:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { accountDropdownExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(currentAccountName)
+                        Spacer(Modifier.weight(1f))
+                        Icon(Icons.Default.ArrowDropDown, null)
+                    }
+                    DropdownMenu(
+                        expanded = accountDropdownExpanded,
+                        onDismissRequest = { accountDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Sin asignar (Pendiente)") },
+                            onClick = {
+                                selectedAccountId = null
+                                accountDropdownExpanded = false
+                            }
+                        )
+                        accounts.forEach { account ->
+                            DropdownMenuItem(
+                                text = { Text(account.name) },
+                                onClick = {
+                                    selectedAccountId = account.id
+                                    accountDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Selector de Categoría
+                val currentCategoryName = selectedCategoryId?.let { id -> categories.find { it.id == id }?.name } ?: "Sin categoría"
+                Text("Categoría:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { categoryDropdownExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(currentCategoryName)
+                        Spacer(Modifier.weight(1f))
+                        Icon(Icons.Default.ArrowDropDown, null)
+                    }
+                    DropdownMenu(
+                        expanded = categoryDropdownExpanded,
+                        onDismissRequest = { categoryDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Sin categoría") },
+                            onClick = {
+                                selectedCategoryId = null
+                                categoryDropdownExpanded = false
+                            }
+                        )
+                        categories.forEach { category ->
+                            DropdownMenuItem(
+                                text = { Text(category.name) },
+                                onClick = {
+                                    selectedCategoryId = category.id
+                                    categoryDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val amount = amountStr.toDoubleOrNull()
+                    if (amount != null && amount > 0 && merchant.isNotBlank()) {
+                        onConfirm(amount, merchant, selectedType, selectedAccountId, selectedCategoryId)
+                        onDismiss()
+                    }
+                },
+                enabled = amountStr.isNotBlank() && merchant.isNotBlank()
+            ) {
+                Text("Registrar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
 }
 
 @Composable

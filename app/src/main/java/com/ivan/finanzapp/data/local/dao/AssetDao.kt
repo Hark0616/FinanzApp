@@ -20,4 +20,7 @@ interface AssetDao {
 
     @Query("DELETE FROM assets WHERE type = 'SUELDO' OR UPPER(name) = 'SUELDO'")
     suspend fun deleteSueldoAssets()
+
+    @Query("SELECT * FROM assets")
+    suspend fun getAllSnapshot(): List<AssetEntity>
 }

@@ -11,6 +11,9 @@ interface DeferredPurchaseDao {
     @Query("SELECT * FROM deferred_purchases WHERE creditCardId = :cardId ORDER BY createdAt DESC")
     fun observeByCardId(cardId: String): Flow<List<DeferredPurchaseEntity>>
 
+    @Query("SELECT * FROM deferred_purchases WHERE creditCardId = :cardId ORDER BY createdAt DESC")
+    suspend fun getByCardIdSnapshot(cardId: String): List<DeferredPurchaseEntity>
+
     @Query("SELECT * FROM deferred_purchases ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<DeferredPurchaseEntity>>
 
@@ -25,4 +28,7 @@ interface DeferredPurchaseDao {
 
     @Query("DELETE FROM deferred_purchases WHERE id = :id AND paidInstallments >= totalInstallments")
     suspend fun deleteIfFullyPaid(id: String)
+
+    @Query("SELECT * FROM deferred_purchases")
+    suspend fun getAllSnapshot(): List<DeferredPurchaseEntity>
 }

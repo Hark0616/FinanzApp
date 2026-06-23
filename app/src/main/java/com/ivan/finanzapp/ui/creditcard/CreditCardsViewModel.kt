@@ -2,6 +2,8 @@ package com.ivan.finanzapp.ui.creditcard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
+import com.ivan.finanzapp.data.local.AppDatabase
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
@@ -9,6 +11,7 @@ import com.ivan.finanzapp.data.local.entity.CreditCardEntity
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
+import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.model.TransactionType
@@ -17,7 +20,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -25,11 +27,13 @@ import javax.inject.Inject
 
 @HiltViewModel
 class CreditCardsViewModel @Inject constructor(
+    private val database: AppDatabase,
     private val creditCardDao: CreditCardDao,
     private val accountDao: AccountDao,
     private val transactionDao: TransactionDao,
     private val deferredPurchaseDao: DeferredPurchaseDao,
-    private val calculator: CreditCardCalculator
+    private val calculator: CreditCardCalculator,
+    private val cloudSyncScheduler: CloudSyncScheduler
 ) : ViewModel() {
 
     val uiState: StateFlow<CreditCardsUiState> = combine(
@@ -82,39 +86,48 @@ class CreditCardsViewModel @Inject constructor(
         interestRateEA: Double? = null
     ) {
         viewModelScope.launch {
-            val purchase = DeferredPurchaseEntity(
-                id = UUID.randomUUID().toString(),
-                creditCardId = cardId,
-                description = description,
-                totalAmount = totalAmount,
-                totalInstallments = totalInstallments,
-                paidInstallments = paidInstallments,
-                purchaseDate = purchaseDate,
-                interestRateEA = interestRateEA
-            )
-            deferredPurchaseDao.upsert(purchase)
-            recalculateCardDebt(cardId)
+            database.withTransaction {
+                val purchase = DeferredPurchaseEntity(
+                    id = UUID.randomUUID().toString(),
+                    creditCardId = cardId,
+                    description = description,
+                    totalAmount = totalAmount,
+                    totalInstallments = totalInstallments,
+                    paidInstallments = paidInstallments,
+                    purchaseDate = purchaseDate,
+                    interestRateEA = interestRateEA
+                )
+                deferredPurchaseDao.upsert(purchase)
+                recalculateCardDebt(cardId)
+            }
+            cloudSyncScheduler.syncSoon()
         }
     }
 
     fun deleteDeferredPurchase(purchaseId: String, cardId: String) {
         viewModelScope.launch {
-            deferredPurchaseDao.delete(purchaseId)
-            recalculateCardDebt(cardId)
+            database.withTransaction {
+                deferredPurchaseDao.delete(purchaseId)
+                recalculateCardDebt(cardId)
+            }
+            cloudSyncScheduler.syncSoon()
         }
     }
 
     fun markInstallmentPaid(purchaseId: String, cardId: String) {
         viewModelScope.launch {
-            deferredPurchaseDao.incrementPaidInstallment(purchaseId)
-            deferredPurchaseDao.deleteIfFullyPaid(purchaseId)
-            recalculateCardDebt(cardId)
+            database.withTransaction {
+                deferredPurchaseDao.incrementPaidInstallment(purchaseId)
+                deferredPurchaseDao.deleteIfFullyPaid(purchaseId)
+                recalculateCardDebt(cardId)
+            }
+            cloudSyncScheduler.syncSoon()
         }
     }
 
     private suspend fun recalculateCardDebt(cardId: String) {
-        val purchases = deferredPurchaseDao.observeByCardId(cardId).first()
-        val card = creditCardDao.observeAll().first().find { it.id == cardId } ?: return
+        val purchases = deferredPurchaseDao.getByCardIdSnapshot(cardId)
+        val card = creditCardDao.getById(cardId) ?: return
         val newDebt = calculator.totalDeferredDebt(purchases)
         val updatedCard = card.copy(currentDebt = newDebt)
         creditCardDao.update(updatedCard)
@@ -123,51 +136,56 @@ class CreditCardsViewModel @Inject constructor(
 
     fun payCreditCard(card: CreditCardEntity, paymentAmount: Double, fundingAccountId: String?) {
         viewModelScope.launch {
-            // 1. Registrar el abono en la tarjeta de crédito
-            val paymentTxId = UUID.randomUUID().toString()
-            val cardTx = TransactionEntity(
-                id = paymentTxId,
-                accountId = card.accountId,
-                amount = paymentAmount,
-                type = TransactionType.PAGO_TC,
-                merchant = "Abono Tarjeta",
-                categoryId = null,
-                rawNotification = "Abono manual registrado en app",
-                timestamp = System.currentTimeMillis(),
-                confirmedByAI = false,
-                needsReview = false
-            )
-            transactionDao.insertIfNotExists(cardTx)
-
-            // Distribuir el abono entre las compras diferidas
-            val purchases = deferredPurchaseDao.observeByCardId(card.id).first()
-            val result = calculator.distributePayment(paymentAmount, purchases)
-            for (updated in result.updatedPurchases) {
-                deferredPurchaseDao.upsert(updated)
-            }
-            for (deletedId in result.deletedPurchaseIds) {
-                deferredPurchaseDao.delete(deletedId)
-            }
-            recalculateCardDebt(card.id)
-
-            // 2. Si se usó una cuenta de fondos (ahorros), debitar saldo y registrar transacción
-            fundingAccountId?.let { accountId ->
-                val fundingTxId = UUID.randomUUID().toString()
-                val fundingTx = TransactionEntity(
-                    id = fundingTxId,
-                    accountId = accountId,
+            database.withTransaction {
+                // 1. Registrar el abono en la tarjeta de crédito
+                val paymentTxId = UUID.randomUUID().toString()
+                val now = System.currentTimeMillis()
+                val cardTx = TransactionEntity(
+                    id = paymentTxId,
+                    accountId = card.accountId,
                     amount = paymentAmount,
-                    type = TransactionType.GASTO,
-                    merchant = "Pago Tarjeta de Crédito",
+                    type = TransactionType.PAGO_TC,
+                    merchant = "Abono Tarjeta",
                     categoryId = null,
-                    rawNotification = "Pago de tarjeta de crédito registrado en app",
-                    timestamp = System.currentTimeMillis(),
+                    rawNotification = "Abono manual registrado en app",
+                    timestamp = now,
                     confirmedByAI = false,
                     needsReview = false
                 )
-                transactionDao.insertIfNotExists(fundingTx)
-                accountDao.adjustBalance(accountId, -paymentAmount)
+                transactionDao.insertIfNotExists(cardTx)
+
+                // Distribuir el abono entre las compras diferidas
+                val purchases = deferredPurchaseDao.getByCardIdSnapshot(card.id)
+                val result = calculator.distributePayment(paymentAmount, purchases)
+                for (updated in result.updatedPurchases) {
+                    deferredPurchaseDao.upsert(updated)
+                }
+                for (deletedId in result.deletedPurchaseIds) {
+                    deferredPurchaseDao.delete(deletedId)
+                }
+                recalculateCardDebt(card.id)
+
+                // 2. Si se usó una cuenta de fondos, es traslado de caja contra deuda,
+                // no consumo nuevo. El gasto fue la compra original con TC.
+                fundingAccountId?.let { accountId ->
+                    val fundingTxId = UUID.randomUUID().toString()
+                    val fundingTx = TransactionEntity(
+                        id = fundingTxId,
+                        accountId = accountId,
+                        amount = paymentAmount,
+                        type = TransactionType.TRANSFERENCIA,
+                        merchant = "Pago Tarjeta de Crédito",
+                        categoryId = null,
+                        rawNotification = "Pago de tarjeta de crédito registrado en app",
+                        timestamp = now,
+                        confirmedByAI = false,
+                        needsReview = false
+                    )
+                    transactionDao.insertIfNotExists(fundingTx)
+                    accountDao.adjustBalance(accountId, -paymentAmount)
+                }
             }
+            cloudSyncScheduler.syncSoon()
         }
     }
 
@@ -182,18 +200,21 @@ class CreditCardsViewModel @Inject constructor(
         interestRateEA: Double?
     ) {
         viewModelScope.launch {
-            val purchase = DeferredPurchaseEntity(
-                id = purchaseId,
-                creditCardId = cardId,
-                description = description,
-                totalAmount = totalAmount,
-                totalInstallments = totalInstallments,
-                paidInstallments = paidInstallments,
-                purchaseDate = purchaseDate,
-                interestRateEA = interestRateEA
-            )
-            deferredPurchaseDao.upsert(purchase)
-            recalculateCardDebt(cardId)
+            database.withTransaction {
+                val purchase = DeferredPurchaseEntity(
+                    id = purchaseId,
+                    creditCardId = cardId,
+                    description = description,
+                    totalAmount = totalAmount,
+                    totalInstallments = totalInstallments,
+                    paidInstallments = paidInstallments,
+                    purchaseDate = purchaseDate,
+                    interestRateEA = interestRateEA
+                )
+                deferredPurchaseDao.upsert(purchase)
+                recalculateCardDebt(cardId)
+            }
+            cloudSyncScheduler.syncSoon()
         }
     }
 }

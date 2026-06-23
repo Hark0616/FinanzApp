@@ -26,4 +26,22 @@
     <string name="cuota_minima">Cuota mínima</string>
     <string name="porcentaje_uso">Uso del cupo</string>
 
+    <!-- Shortcuts -->
+    <string name="shortcut_add_label">Registrar Gasto</string>
+    <string name="shortcut_add_long_label">Registrar nuevo gasto manualmente</string>
+    <string name="shortcut_unclassified_label">Clasificar Cuenta</string>
+    <string name="shortcut_unclassified_long_label">Ver movimientos pendientes de clasificar cuenta</string>
+
+    <!-- Widgets -->
+    <string name="widget_title">Balance Ejecutivo</string>
+    <string name="widget_description">Muestra el saldo disponible consolidado de tus cuentas y deudas de tarjetas de crédito.</string>
+    <string name="widget_autonomia_title">Autonomía de Presupuesto</string>
+    <string name="widget_autonomia_desc">Muestra el porcentaje y monto restante del presupuesto mensual.</string>
+    <string name="widget_vencimiento_title">Próximo Vencimiento</string>
+    <string name="widget_vencimiento_desc">Avisa del pago más cercano a vencer (tarjeta o crédito).</string>
+    <string name="widget_disponible_title">Disponible Neto</string>
+    <string name="widget_disponible_desc">Muestra tu saldo disponible consolidado en formato ultra-limpio.</string>
+
+    <!-- Google Auth -->
+    <string name="google_web_client_id">1000675040018-npmikovplk9g0sc5s3s2ulnpu6jgkks0.apps.googleusercontent.com</string>
 </resources>
