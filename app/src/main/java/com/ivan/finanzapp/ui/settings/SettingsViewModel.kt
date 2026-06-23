@@ -62,7 +62,8 @@ class SettingsViewModel @Inject constructor(
         _syncStatusMessage,
         _syncErrorMessage,
         _syncStateVersion,
-        _appLockChanged
+        _appLockChanged,
+        creditCardDao.observeAll()
     ) { flows ->
         @Suppress("UNCHECKED_CAST")
         val accounts = flows[0] as List<AccountEntity>
@@ -77,10 +78,15 @@ class SettingsViewModel @Inject constructor(
         val syncStatusMessage = flows[10] as String?
         val syncErrorMessage = flows[11] as String?
         val apiKey = securePrefs.getOpenRouterApiKey() ?: ""
+        @Suppress("UNCHECKED_CAST")
+        val creditCards = flows[14] as List<CreditCardEntity>
+        val creditCardDebts = creditCards.associate { it.accountId to it.currentDebt }
+
         SettingsUiState(
             isLoading = false,
             apiKey = apiKey,
             accounts = accounts,
+            creditCardDebts = creditCardDebts,
             customRules = customRules,
             isAddAccountDialogVisible = isAddDialogVisible,
             isProcessingDialogVisible = isProcDialogVisible,

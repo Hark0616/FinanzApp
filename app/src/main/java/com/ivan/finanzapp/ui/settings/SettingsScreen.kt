@@ -92,8 +92,22 @@ fun SettingsScreen(
                 }
             } else {
                 items(state.accounts, key = { it.id }) { account ->
+                    val isCredit = account.type == com.ivan.finanzapp.domain.model.AccountType.TARJETA_CREDITO
+                    val displayValue = if (isCredit) {
+                        val debt = state.creditCardDebts[account.id] ?: 0.0
+                        "Deuda: ${formatCOP(debt)}"
+                    } else {
+                        formatCOP(account.currentBalance)
+                    }
+                    val valueColor = if (isCredit && (state.creditCardDebts[account.id] ?: 0.0) > 0.0) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
                     AccountItemRow(
                         account = account,
+                        displayValue = displayValue,
+                        valueColor = valueColor,
                         onDeleteClick = { accountToDelete = account }
                     )
                 }
@@ -877,6 +891,8 @@ private fun AutomationSettingsDialog(
 @Composable
 private fun AccountItemRow(
     account: AccountEntity,
+    displayValue: String,
+    valueColor: androidx.compose.ui.graphics.Color,
     onDeleteClick: () -> Unit
 ) {
     Card(
@@ -910,8 +926,9 @@ private fun AccountItemRow(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    formatCOP(account.currentBalance),
+                    displayValue,
                     style = MaterialTheme.typography.bodyLarge,
+                    color = valueColor,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.width(8.dp))
