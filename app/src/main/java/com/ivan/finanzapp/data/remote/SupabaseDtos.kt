@@ -576,3 +576,45 @@ fun DebtPaymentApplicationDto.toEntity(): DebtPaymentApplicationEntity = DebtPay
         ?: DebtPaymentApplicationType.CARD_EXTRA_PAYMENT,
     appliedAt = appliedAt
 )
+
+@Serializable
+data class FinancialAdjustmentDto(
+    val id: String,
+    val targetType: String,
+    val targetId: String,
+    val targetName: String,
+    val previousValue: Double,
+    val newValue: Double,
+    val delta: Double,
+    val reason: String,
+    val note: String? = null,
+    val createdAt: Long,
+    val user_id: String? = null
+)
+
+fun FinancialAdjustmentEntity.toDto(): FinancialAdjustmentDto = FinancialAdjustmentDto(
+    id = id,
+    targetType = targetType.name,
+    targetId = targetId,
+    targetName = targetName,
+    previousValue = previousValue,
+    newValue = newValue,
+    delta = delta,
+    reason = reason,
+    note = note,
+    createdAt = createdAt
+)
+
+fun FinancialAdjustmentDto.toEntity(): FinancialAdjustmentEntity = FinancialAdjustmentEntity(
+    id = id,
+    targetType = FinancialAdjustmentTargetType.entries.firstOrNull { it.name == targetType }
+        ?: FinancialAdjustmentTargetType.ACCOUNT_BALANCE,
+    targetId = targetId,
+    targetName = targetName,
+    previousValue = previousValue,
+    newValue = newValue,
+    delta = delta,
+    reason = reason,
+    note = note,
+    createdAt = createdAt
+)

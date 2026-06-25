@@ -76,6 +76,9 @@ class MainActivity : FragmentActivity() {
                 val currentDestination = navBackStackEntry?.destination
                 val deepLinkIntent = pendingDeepLinkIntent
                 val shouldShowLocalLock = securePrefs.isAppLockEnabled() && !isLocalUnlocked
+                val showBottomBar = bottomNavScreens.any { screen ->
+                    currentDestination?.hierarchy?.any { it.route == screen.route } == true
+                }
 
                 LaunchedEffect(deepLinkIntent) {
                     if (deepLinkIntent?.data != null) {
@@ -94,32 +97,34 @@ class MainActivity : FragmentActivity() {
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         bottomBar = {
-                            NavigationBar {
-                                bottomNavScreens.forEach { screen ->
-                                    NavigationBarItem(
-                                        icon = { Icon(screen.icon, contentDescription = screen.label) },
-                                        label = { Text(screen.label) },
-                                        selected = currentDestination?.hierarchy?.any {
-                                            it.route == screen.route
-                                        } == true,
-                                        onClick = {
-                                            val isSelected = currentDestination?.hierarchy?.any {
+                            if (showBottomBar) {
+                                NavigationBar {
+                                    bottomNavScreens.forEach { screen ->
+                                        NavigationBarItem(
+                                            icon = { Icon(screen.icon, contentDescription = screen.label) },
+                                            label = { Text(screen.label) },
+                                            selected = currentDestination?.hierarchy?.any {
                                                 it.route == screen.route
-                                            } == true
+                                            } == true,
+                                            onClick = {
+                                                val isSelected = currentDestination?.hierarchy?.any {
+                                                    it.route == screen.route
+                                                } == true
 
-                                            if (isSelected) {
-                                                navController.currentBackStackEntry?.savedStateHandle?.set("reset_root", true)
-                                            } else {
-                                                navController.navigate(screen.route) {
-                                                    popUpTo(navController.graph.findStartDestination().id) {
-                                                        saveState = true
+                                                if (isSelected) {
+                                                    navController.currentBackStackEntry?.savedStateHandle?.set("reset_root", true)
+                                                } else {
+                                                    navController.navigate(screen.route) {
+                                                        popUpTo(navController.graph.findStartDestination().id) {
+                                                            saveState = true
+                                                        }
+                                                        launchSingleTop = true
+                                                        restoreState = false
                                                     }
-                                                    launchSingleTop = true
-                                                    restoreState = false
                                                 }
                                             }
-                                        }
-                                    )
+                                        )
+                                    }
                                 }
                             }
                         }

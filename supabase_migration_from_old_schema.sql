@@ -205,6 +205,20 @@ CREATE TABLE IF NOT EXISTS debt_payment_applications (
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid()
 );
 
+CREATE TABLE IF NOT EXISTS financial_adjustments (
+    id TEXT PRIMARY KEY,
+    "targetType" TEXT NOT NULL DEFAULT 'ACCOUNT_BALANCE',
+    "targetId" TEXT NOT NULL DEFAULT '',
+    "targetName" TEXT NOT NULL DEFAULT '',
+    "previousValue" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    "newValue" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    delta DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    reason TEXT NOT NULL DEFAULT '',
+    note TEXT NULL,
+    "createdAt" BIGINT NOT NULL DEFAULT 0,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid()
+);
+
 -- ==========================================
 -- PATCH EXISTING TABLES
 -- ==========================================
@@ -336,10 +350,23 @@ ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "applicationType"
 ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS "appliedAt" BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE debt_payment_applications ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 
+ALTER TABLE financial_adjustments ADD COLUMN IF NOT EXISTS "targetType" TEXT NOT NULL DEFAULT 'ACCOUNT_BALANCE';
+ALTER TABLE financial_adjustments ADD COLUMN IF NOT EXISTS "targetId" TEXT NOT NULL DEFAULT '';
+ALTER TABLE financial_adjustments ADD COLUMN IF NOT EXISTS "targetName" TEXT NOT NULL DEFAULT '';
+ALTER TABLE financial_adjustments ADD COLUMN IF NOT EXISTS "previousValue" DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+ALTER TABLE financial_adjustments ADD COLUMN IF NOT EXISTS "newValue" DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+ALTER TABLE financial_adjustments ADD COLUMN IF NOT EXISTS delta DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+ALTER TABLE financial_adjustments ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE financial_adjustments ADD COLUMN IF NOT EXISTS note TEXT NULL;
+ALTER TABLE financial_adjustments ADD COLUMN IF NOT EXISTS "createdAt" BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE financial_adjustments ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
 CREATE UNIQUE INDEX IF NOT EXISTS payment_match_suggestions_source_target_user_key
     ON payment_match_suggestions ("sourceTransactionId", "targetType", "targetId", user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS debt_payment_applications_source_user_key
     ON debt_payment_applications ("sourceTransactionId", user_id);
+CREATE INDEX IF NOT EXISTS financial_adjustments_target_user_idx
+    ON financial_adjustments ("targetId", user_id);
 
 -- ==========================================
 -- RLS POLICIES
@@ -358,6 +385,7 @@ ALTER TABLE custom_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notification_sync_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_match_suggestions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE debt_payment_applications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE financial_adjustments ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Read categories" ON categories;
 DROP POLICY IF EXISTS "Insert own categories" ON categories;
@@ -375,6 +403,7 @@ DROP POLICY IF EXISTS "Manage own custom rules" ON custom_rules;
 DROP POLICY IF EXISTS "Manage own ledger" ON notification_sync_ledger;
 DROP POLICY IF EXISTS "Manage own payment suggestions" ON payment_match_suggestions;
 DROP POLICY IF EXISTS "Manage own debt payment applications" ON debt_payment_applications;
+DROP POLICY IF EXISTS "Manage own financial adjustments" ON financial_adjustments;
 
 CREATE POLICY "Read categories" ON categories FOR SELECT
     USING (user_id IS NULL OR auth.uid() = user_id);
@@ -397,6 +426,7 @@ CREATE POLICY "Manage own custom rules" ON custom_rules FOR ALL USING (auth.uid(
 CREATE POLICY "Manage own ledger" ON notification_sync_ledger FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own payment suggestions" ON payment_match_suggestions FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own debt payment applications" ON debt_payment_applications FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Manage own financial adjustments" ON financial_adjustments FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- ==========================================
 -- DEFAULT CATEGORIES

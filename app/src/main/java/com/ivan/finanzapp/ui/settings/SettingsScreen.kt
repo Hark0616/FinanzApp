@@ -1,6 +1,8 @@
 package com.ivan.finanzapp.ui.settings
 
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings as AndroidSettings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,6 +32,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.local.entity.AccountEntity
+import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentEntity
+import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentTargetType
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.ui.components.SectionTitle
 import com.ivan.finanzapp.ui.components.formatCOP
@@ -54,6 +58,10 @@ fun SettingsScreen(
     var securityMessage by remember { mutableStateOf<String?>(null) }
     var isSecurityPromptOpen by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        viewModel.refreshNotificationPermission()
+    }
+
     Scaffold { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -63,14 +71,34 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Sección: Cuentas y Activos Financieros (¡AL PRINCIPIO!)
+            item {
+                SettingsHeader()
+            }
+
+            item {
+                CaptureHealthCard(
+                    state = state,
+                    onConfigureClick = { viewModel.toggleProcessingDialog(true) },
+                    onOpenPermissionClick = {
+                        context.startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    }
+                )
+            }
+
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SectionTitle("Cuentas y Activos Financieros")
+                    Column(modifier = Modifier.weight(1f)) {
+                        SectionTitle("Fuentes de datos")
+                        Text(
+                            text = "Cuentas, tarjetas y últimos 4 dígitos para asignar notificaciones.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Button(
                         onClick = { viewModel.toggleAddAccountDialog(true) },
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
@@ -84,12 +112,7 @@ fun SettingsScreen(
 
             if (state.accounts.isEmpty()) {
                 item {
-                    Text(
-                        "No has configurado cuentas ni instrumentos financieros todavía. Las transacciones de tus notificaciones " +
-                                "aparecerán sin asignar hasta que las asocies.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
+                    EmptyDataSourcesCard(onAddClick = { viewModel.toggleAddAccountDialog(true) })
                 }
             } else {
                 items(state.accounts, key = { it.id }) { account ->
@@ -112,6 +135,12 @@ fun SettingsScreen(
                         onEditClick = { accountToEdit = account },
                         onDeleteClick = { accountToDelete = account }
                     )
+                }
+            }
+
+            if (state.recentFinancialAdjustments.isNotEmpty()) {
+                item {
+                    RecentFinancialAdjustmentsCard(state.recentFinancialAdjustments)
                 }
             }
 
@@ -311,13 +340,12 @@ fun SettingsScreen(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             }
 
-            // Sección: Automatización de Notificaciones (¡AL FINAL!)
             item {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { viewModel.toggleProcessingDialog(true) },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(8.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
                 ) {
                     Row(
@@ -340,13 +368,13 @@ fun SettingsScreen(
                             Spacer(Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    text = "Automatización e IA (Notificaciones)",
+                                    text = "Automatización",
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Configura el procesamiento por IA, reglas personalizadas y privacidad.",
+                                    text = "Parser local, IA opcional, reglas personalizadas y privacidad.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -379,8 +407,8 @@ fun SettingsScreen(
                 title = { Text("Eliminar cuenta / instrumento") },
                 text = {
                     Text(
-                        "¿Estás seguro de que deseas eliminar la cuenta \"${account.name}\"? " +
-                                "Esto desvinculará sus transacciones y eliminará de forma permanente sus tarjetas de crédito asociadas."
+                        "¿Deseas eliminar \"${account.name}\"? Las transacciones históricas quedarán sin cuenta asignada para no inventar saldos. " +
+                                "Si es una tarjeta, también se eliminará su configuración asociada."
                     )
                 },
                 confirmButton = {
@@ -402,35 +430,62 @@ fun SettingsScreen(
             )
         }
 
-        // Diálogo para Editar Cuenta / Saldo / Cupo
+        // Diálogo para correcciones manuales auditadas
         accountToEdit?.let { account ->
             val isCredit = account.type == AccountType.TARJETA_CREDITO
             val associatedCard = state.creditCardsMap[account.id]
 
             var editBalance by remember(account.id) {
-                mutableStateOf(if (isCredit) "" else account.currentBalance.toString())
+                mutableStateOf(if (isCredit) "" else formatEditableAmount(account.currentBalance))
             }
             var editCreditLimit by remember(account.id) {
-                mutableStateOf(associatedCard?.creditLimit?.toString() ?: "")
+                mutableStateOf(associatedCard?.creditLimit?.let(::formatEditableAmount) ?: "")
             }
             var editCurrentDebt by remember(account.id) {
-                mutableStateOf(associatedCard?.currentDebt?.toString() ?: "")
+                mutableStateOf(associatedCard?.currentDebt?.let(::formatEditableAmount) ?: "")
+            }
+            var correctionReason by remember(account.id) { mutableStateOf("") }
+
+            val parsedBalance = parseMoneyInput(editBalance)
+            val parsedLimit = parseMoneyInput(editCreditLimit)
+            val parsedDebt = parseMoneyInput(editCurrentDebt)
+            val hasReason = correctionReason.trim().length >= 6
+            val canSave = if (isCredit) {
+                hasReason && parsedLimit != null && parsedDebt != null
+            } else {
+                hasReason && parsedBalance != null
             }
 
             AlertDialog(
                 onDismissRequest = { accountToEdit = null },
-                title = { Text("Editar ${account.name}") },
+                title = { Text("Corrección auditada") },
                 text = {
                     LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        item {
+                            Text(
+                                text = account.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (isCredit) {
+                                    "Esto no registra pagos ni compras. Solo corrige cupo o deuda visible con trazabilidad."
+                                } else {
+                                    "Esto no crea una transacción. Solo corrige el saldo visible con trazabilidad."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         if (!isCredit) {
                             item {
                                 OutlinedTextField(
                                     value = editBalance,
                                     onValueChange = { editBalance = it },
-                                    label = { Text("Saldo Actual ($)") },
+                                    label = { Text("Nuevo saldo manual ($)") },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -441,7 +496,7 @@ fun SettingsScreen(
                                 OutlinedTextField(
                                     value = editCreditLimit,
                                     onValueChange = { editCreditLimit = it },
-                                    label = { Text("Cupo Límite ($)") },
+                                    label = { Text("Cupo límite ($)") },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -451,30 +506,41 @@ fun SettingsScreen(
                                 OutlinedTextField(
                                     value = editCurrentDebt,
                                     onValueChange = { editCurrentDebt = it },
-                                    label = { Text("Deuda Actual ($)") },
+                                    label = { Text("Deuda visible ($)") },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                                 )
                             }
                         }
+                        item {
+                            OutlinedTextField(
+                                value = correctionReason,
+                                onValueChange = { correctionReason = it },
+                                label = { Text("Motivo obligatorio") },
+                                placeholder = { Text("Ej: saldo confirmado en extracto") },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 2
+                            )
+                        }
                     }
                 },
                 confirmButton = {
                     Button(
+                        enabled = canSave,
                         onClick = {
                             if (isCredit) {
-                                val limit = editCreditLimit.toDoubleOrNull() ?: 0.0
-                                val debt = editCurrentDebt.toDoubleOrNull() ?: 0.0
-                                viewModel.updateCreditCardDetails(account.id, limit, debt)
+                                val limit = parsedLimit ?: return@Button
+                                val debt = parsedDebt ?: return@Button
+                                viewModel.recordCreditCardCorrection(account.id, limit, debt, correctionReason)
                             } else {
-                                val balance = editBalance.toDoubleOrNull() ?: 0.0
-                                viewModel.updateAccountBalance(account.id, balance)
+                                val balance = parsedBalance ?: return@Button
+                                viewModel.recordAccountBalanceCorrection(account.id, balance, correctionReason)
                             }
                             accountToEdit = null
                         }
                     ) {
-                        Text("Guardar")
+                        Text("Guardar corrección")
                     }
                 },
                 dismissButton = {
@@ -515,6 +581,44 @@ private fun formatLastSyncTime(timestampMillis: Long): String {
     return formatter.format(Date(timestampMillis))
 }
 
+private fun parseMoneyInput(value: String): Double? {
+    val raw = value
+        .trim()
+        .replace("$", "")
+        .replace(" ", "")
+    val commaCount = raw.count { it == ',' }
+    val dotCount = raw.count { it == '.' }
+    val cleaned = when {
+        commaCount > 1 && dotCount == 0 -> raw.replace(",", "")
+        dotCount > 1 && commaCount == 0 -> raw.replace(".", "")
+        commaCount > 0 && dotCount > 0 -> {
+            if (raw.lastIndexOf(',') > raw.lastIndexOf('.')) {
+                raw.replace(".", "").replace(",", ".")
+            } else {
+                raw.replace(",", "")
+            }
+        }
+        commaCount == 1 -> {
+            val decimals = raw.substringAfterLast(',').length
+            if (decimals == 3) raw.replace(",", "") else raw.replace(",", ".")
+        }
+        dotCount == 1 -> {
+            val decimals = raw.substringAfterLast('.').length
+            if (decimals == 3) raw.replace(".", "") else raw
+        }
+        else -> raw
+    }
+    return cleaned.toDoubleOrNull()?.takeIf { it >= 0.0 }
+}
+
+private fun formatEditableAmount(value: Double): String {
+    return if (value % 1.0 == 0.0) {
+        value.toLong().toString()
+    } else {
+        value.toString()
+    }
+}
+
 private fun requestLocalSecurityConfirmation(
     context: Context,
     title: String,
@@ -537,6 +641,310 @@ private fun requestLocalSecurityConfirmation(
         onSuccess = onSuccess,
         onError = onError
     )
+}
+
+@Composable
+private fun SettingsHeader() {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "Ajustes",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            text = "Centro de control para captura, fuentes y seguridad financiera.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun CaptureHealthCard(
+    state: SettingsUiState,
+    onConfigureClick: () -> Unit,
+    onOpenPermissionClick: () -> Unit
+) {
+    val total = state.ledgerTotalCount
+    val statusTitle = when {
+        !state.isNotificationListenerEnabled -> "Permiso requerido"
+        state.ledgerRecentFailedCount > 0 -> "Revisar fallos"
+        state.ledgerRecentCount == 0 && total > 0 -> "Sin actividad reciente"
+        total == 0 -> "Sin capturas todavía"
+        state.ledgerParsedCount > 0 -> "Captura operativa"
+        else -> "Captura en observación"
+    }
+    val statusColor = when {
+        !state.isNotificationListenerEnabled -> MaterialTheme.colorScheme.error
+        state.ledgerRecentFailedCount > 0 -> MaterialTheme.colorScheme.error
+        total == 0 -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val latestParsedText = state.latestParsedLedgerEntry?.let {
+        "Última parseada: ${formatLastSyncTime(it.receivedAtMillis)}"
+    } ?: "Aún no hay una notificación parseada correctamente."
+    val latestText = state.latestLedgerEntry?.let {
+        val status = it.status.name.lowercase().replaceFirstChar(Char::titlecase)
+        "Última recibida: ${formatLastSyncTime(it.receivedAtMillis)} · $status"
+    } ?: "Aún no se ha recibido una notificación bancaria."
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = CardDefaults.outlinedCardBorder()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .padding(10.dp)
+                            .size(24.dp)
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Estado de captura",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = latestText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = latestParsedText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    text = statusTitle,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = statusColor,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CaptureStatChip("Últimas 24h", state.ledgerRecentCount, Modifier.weight(1f))
+                CaptureStatChip(
+                    "Fallos 24h",
+                    state.ledgerRecentFailedCount,
+                    Modifier.weight(1f),
+                    isWarning = state.ledgerRecentFailedCount > 0
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CaptureStatChip("Parseadas", state.ledgerParsedCount, Modifier.weight(1f))
+                CaptureStatChip("Fallidas", state.ledgerFailedCount, Modifier.weight(1f), isWarning = state.ledgerFailedCount > 0)
+            }
+
+            if (!state.isNotificationListenerEnabled) {
+                Button(
+                    onClick = onOpenPermissionClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Activar acceso a notificaciones")
+                }
+            } else {
+                OutlinedButton(
+                    onClick = onConfigureClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Configurar captura y reglas")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaptureStatChip(
+    label: String,
+    value: Int,
+    modifier: Modifier = Modifier,
+    isWarning: Boolean = false
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = if (isWarning) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        }
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(
+                text = value.toString(),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (isWarning) {
+                    MaterialTheme.colorScheme.onErrorContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isWarning) {
+                    MaterialTheme.colorScheme.onErrorContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyDataSourcesCard(onAddClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = CardDefaults.outlinedCardBorder()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Sin fuentes configuradas",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Agrega cuentas y tarjetas con sus últimos 4 dígitos para que las notificaciones se asignen sin confundir saldos, deuda o pagos.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(
+                onClick = onAddClick,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Agregar fuente")
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentFinancialAdjustmentsCard(adjustments: List<FinancialAdjustmentEntity>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = CardDefaults.outlinedCardBorder()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Correcciones recientes",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Ajustes manuales con motivo y valor anterior/nuevo.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            adjustments.take(4).forEach { adjustment ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = adjustment.targetName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = adjustmentTargetLabel(adjustment.targetType),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = "${formatCOP(adjustment.previousValue)} -> ${formatCOP(adjustment.newValue)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = adjustment.reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun adjustmentTargetLabel(targetType: FinancialAdjustmentTargetType): String {
+    return when (targetType) {
+        FinancialAdjustmentTargetType.ACCOUNT_BALANCE -> "Saldo"
+        FinancialAdjustmentTargetType.CREDIT_CARD_LIMIT -> "Cupo"
+        FinancialAdjustmentTargetType.CREDIT_CARD_DEBT -> "Deuda"
+    }
 }
 
 @Composable
@@ -1001,16 +1409,19 @@ private fun AccountItemRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 val icon = when (account.type) {
                     AccountType.TARJETA_CREDITO -> Icons.Default.CreditCard
                     AccountType.NEQUI -> Icons.Default.Smartphone
@@ -1021,23 +1432,43 @@ private fun AccountItemRow(
                 }
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(account.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                    Text(account.type.displayName, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(account.type.displayName, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        account.lastFourDigits?.takeIf { it.isNotBlank() }?.let { digits ->
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                            ) {
+                                Text(
+                                    text = "*$digits",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     displayValue,
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyLarge,
                     color = valueColor,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(Modifier.width(8.dp))
                 IconButton(onClick = onEditClick) {
-                    Icon(Icons.Default.Edit, contentDescription = "Editar saldo / cupo", tint = Color.Gray)
+                    Icon(Icons.Default.Edit, contentDescription = "Corrección auditada", tint = Color.Gray)
                 }
-                Spacer(Modifier.width(4.dp))
                 IconButton(onClick = onDeleteClick) {
                     Icon(Icons.Default.Delete, contentDescription = "Eliminar cuenta", tint = Color.Gray)
                 }
@@ -1052,7 +1483,7 @@ private fun PrivacyAndSecurityCard() {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
         ),
@@ -1076,7 +1507,7 @@ private fun PrivacyAndSecurityCard() {
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        "Garantía de Privacidad y Seguridad",
+                        "Privacidad y seguridad",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1092,7 +1523,7 @@ private fun PrivacyAndSecurityCard() {
             AnimatedVisibility(visible = expanded) {
                 Column(Modifier.padding(top = 12.dp)) {
                     Text(
-                        text = "Tu privacidad es nuestra prioridad absoluta. A diferencia de otras aplicaciones, FinanzApp opera bajo las siguientes estrictas reglas de seguridad:",
+                        text = "FinanzApp procesa notificaciones bancarias sensibles. Estas son las reglas reales del sistema:",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1109,13 +1540,13 @@ private fun PrivacyAndSecurityCard() {
                         Spacer(Modifier.width(8.dp))
                         Column {
                             Text(
-                                "Procesamiento 100% Offline y Local",
+                                "Procesamiento local por defecto",
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "Tus notificaciones y mensajes se analizan en tiempo real dentro de tu propio celular. No tenemos servidores centrales, bases de datos en la nube ni guardamos tus textos fuera de tu dispositivo.",
+                                "Las reglas y parsers se ejecutan en el celular. Si activas backup, tus datos se sincronizan con tu cuenta en la nube; no se promete que todo quede solo local.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1132,13 +1563,13 @@ private fun PrivacyAndSecurityCard() {
                         Spacer(Modifier.width(8.dp))
                         Column {
                             Text(
-                                "Filtro Estricto de Aplicaciones (Whitelisting)",
+                                "Filtro estricto de aplicaciones",
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "La app ignora de inmediato chats de WhatsApp, Telegram, llamadas, correos, fotos u otras aplicaciones personales. El listener solo intercepta y evalúa paquetes de apps bancarias autorizadas (ej. Nequi, Davivienda, Bancolombia, etc.).",
+                                "El listener debe evaluar solo paquetes bancarios autorizados. Los mensajes que no cumplen reglas quedan ignorados o fallidos en el ledger para auditoría.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1155,13 +1586,13 @@ private fun PrivacyAndSecurityCard() {
                         Spacer(Modifier.width(8.dp))
                         Column {
                             Text(
-                                "Sin Intermediarios con Inteligencia Artificial",
+                                "IA opcional y explícita",
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "Si activas IA local (Gemini Nano), se ejecuta offline. Si utilizas IA en la nube, la comunicación se realiza directamente desde tu celular hacia la API oficial usando tu API Key personal, de forma 100% anónima y libre de identificadores personales o de cuenta. La información compartida es exclusivamente para la clasificación del mensaje.",
+                                "La IA local se ejecuta en el dispositivo si está disponible. La IA en nube solo se usa si eliges ese modo y guardas tu API key.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1178,13 +1609,13 @@ private fun PrivacyAndSecurityCard() {
                         Spacer(Modifier.width(8.dp))
                         Column {
                             Text(
-                                "Base de Datos Encriptada (SQLCipher)",
+                                "Base local cifrada",
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "Todos tus movimientos financieros se almacenan localmente utilizando encriptación SQLCipher de grado militar. Tus datos están completamente blindados contra otras aplicaciones y accesos no autorizados en tu celular.",
+                                "La base local usa SQLCipher. El bloqueo local protege la app en uso, pero el respaldo en nube depende de la sesión y reglas de Supabase.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1202,7 +1633,7 @@ private fun DeviceOptimizationGuideCard() {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
         )
@@ -1225,7 +1656,7 @@ private fun DeviceOptimizationGuideCard() {
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        "Guía de Optimización en Redmi y Samsung",
+                        "Optimización del sistema",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -1240,8 +1671,7 @@ private fun DeviceOptimizationGuideCard() {
             AnimatedVisibility(visible = expanded) {
                 Column(Modifier.padding(top = 12.dp)) {
                     Text(
-                        "Para que FinanzApp escuche las notificaciones de compras/NFC y SMS de forma confiable, " +
-                                "debes configurar los siguientes ajustes en tus celulares actuales:",
+                        "Para que FinanzApp lea notificaciones de forma confiable, evita que el sistema suspenda la app en segundo plano:",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
                     )
@@ -1249,28 +1679,28 @@ private fun DeviceOptimizationGuideCard() {
                     Spacer(Modifier.height(8.dp))
 
                     Text(
-                        "📱 Samsung Galaxy S26 Ultra (One UI):",
+                        "Samsung One UI:",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                     Text(
-                        "1. Ve a Ajustes → Aplicaciones → FinanzApp → Batería → Selecciona 'Sin Restricciones'.\n" +
-                                "2. En Cuidado del dispositivo → Batería → Límites de uso en segundo plano → Apps que nunca se suspenden → Agrega FinanzApp.\n" +
-                                "3. Abre la pantalla de apps recientes, mantén pulsado el ícono de la app y selecciona 'Mantener abierta' para evitar que el sistema la cierre.",
+                        "1. Ve a Ajustes > Aplicaciones > FinanzApp > Batería y selecciona 'Sin restricciones'.\n" +
+                                "2. En Cuidado del dispositivo > Batería, agrega FinanzApp a las apps que nunca se suspenden.\n" +
+                                "3. Verifica que las notificaciones de bancos estén habilitadas.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
                         modifier = Modifier.padding(start = 12.dp, bottom = 8.dp)
                     )
 
                     Text(
-                        "📱 Xiaomi Redmi 10s (MIUI / HyperOS):",
+                        "Xiaomi MIUI / HyperOS:",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                     Text(
-                        "1. Ve a Ajustes → Aplicaciones → Administrar aplicaciones → FinanzApp.\n" +
+                        "1. Ve a Ajustes > Aplicaciones > Administrar aplicaciones > FinanzApp.\n" +
                                 "2. Activa la opción 'Inicio Automático'.\n" +
                                 "3. En 'Ahorro de batería', selecciona 'Sin Restricciones'.\n" +
                                 "4. Abre la app, ve a la vista de apps recientes, mantén presionado FinanzApp y pulsa el ícono de candado.",

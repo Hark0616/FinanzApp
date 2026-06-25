@@ -13,32 +13,45 @@ import androidx.compose.ui.platform.LocalContext
 private val LightColors = lightColorScheme(
     primary = Green40,
     onPrimary = androidx.compose.ui.graphics.Color.White,
-    primaryContainer = Green80,
+    primaryContainer = androidx.compose.ui.graphics.Color(0xFFE8D9A8),
+    onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFF241A06),
     secondary = Blue40,
     onSecondary = androidx.compose.ui.graphics.Color.White,
-    secondaryContainer = Blue80,
+    secondaryContainer = androidx.compose.ui.graphics.Color(0xFFE5E7EB),
+    onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFF1D2430),
     background = Surface,
-    surface = androidx.compose.ui.graphics.Color.White,
+    onBackground = androidx.compose.ui.graphics.Color(0xFF171717),
+    surface = androidx.compose.ui.graphics.Color(0xFFFFFCF6),
+    onSurface = androidx.compose.ui.graphics.Color(0xFF171717),
+    surfaceVariant = androidx.compose.ui.graphics.Color(0xFFEDE8DD),
+    onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF625D52),
+    outline = androidx.compose.ui.graphics.Color(0xFFC9BFAE),
     error = TrafficRed
 )
 
 private val DarkColors = darkColorScheme(
     primary = Green80,
     onPrimary = GreenDark,
-    primaryContainer = Green40,
+    primaryContainer = androidx.compose.ui.graphics.Color(0xFF3B3018),
+    onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFFF3E4AE),
     secondary = Blue80,
     onSecondary = Blue40,
+    secondaryContainer = androidx.compose.ui.graphics.Color(0xFF202631),
+    onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFD8DEE9),
     background = SurfaceDark,
-    surface = androidx.compose.ui.graphics.Color(0xFF1E1E1E),
+    onBackground = OnSurfaceDark,
+    surface = androidx.compose.ui.graphics.Color(0xFF18191C),
+    onSurface = OnSurfaceDark,
+    surfaceVariant = androidx.compose.ui.graphics.Color(0xFF25262A),
+    onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFC8C0B3),
+    outline = androidx.compose.ui.graphics.Color(0xFF3F3A31),
     error = TrafficRed
 )
 
 @Composable
 fun FinanzAppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Colores dinámicos de Android 12+ (Material You); desactívalo si
-    // quieres que siempre se use tu paleta definida arriba.
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

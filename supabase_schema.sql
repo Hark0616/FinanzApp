@@ -255,6 +255,24 @@ CREATE TABLE IF NOT EXISTS debt_payment_applications (
 -- Enable RLS for debt payment applications
 ALTER TABLE debt_payment_applications ENABLE ROW LEVEL SECURITY;
 
+-- 14. FINANCIAL ADJUSTMENTS TABLE
+CREATE TABLE IF NOT EXISTS financial_adjustments (
+    id TEXT PRIMARY KEY,
+    "targetType" TEXT NOT NULL,
+    "targetId" TEXT NOT NULL,
+    "targetName" TEXT NOT NULL,
+    "previousValue" DOUBLE PRECISION NOT NULL,
+    "newValue" DOUBLE PRECISION NOT NULL,
+    delta DOUBLE PRECISION NOT NULL,
+    reason TEXT NOT NULL,
+    note TEXT NULL,
+    "createdAt" BIGINT NOT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL DEFAULT auth.uid()
+);
+
+-- Enable RLS for financial adjustments
+ALTER TABLE financial_adjustments ENABLE ROW LEVEL SECURITY;
+
 
 -- ==========================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
@@ -277,6 +295,7 @@ DROP POLICY IF EXISTS "Manage own custom rules" ON custom_rules;
 DROP POLICY IF EXISTS "Manage own ledger" ON notification_sync_ledger;
 DROP POLICY IF EXISTS "Manage own payment suggestions" ON payment_match_suggestions;
 DROP POLICY IF EXISTS "Manage own debt payment applications" ON debt_payment_applications;
+DROP POLICY IF EXISTS "Manage own financial adjustments" ON financial_adjustments;
 
 -- Policies for CATEGORIES (users can read defaults and their own, but only write their own)
 CREATE POLICY "Read categories" ON categories FOR SELECT 
@@ -301,6 +320,7 @@ CREATE POLICY "Manage own custom rules" ON custom_rules FOR ALL USING (auth.uid(
 CREATE POLICY "Manage own ledger" ON notification_sync_ledger FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own payment suggestions" ON payment_match_suggestions FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own debt payment applications" ON debt_payment_applications FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Manage own financial adjustments" ON financial_adjustments FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 
 -- ==========================================

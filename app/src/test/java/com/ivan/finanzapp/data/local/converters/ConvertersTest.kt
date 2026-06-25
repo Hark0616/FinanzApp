@@ -2,6 +2,7 @@ package com.ivan.finanzapp.data.local.converters
 
 import com.ivan.finanzapp.data.local.entity.NotificationProcessingStatus
 import com.ivan.finanzapp.data.local.entity.DebtPaymentApplicationType
+import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentTargetType
 import com.ivan.finanzapp.data.local.entity.PaymentMatchStatus
 import com.ivan.finanzapp.data.local.entity.PaymentMatchTargetType
 import org.junit.Assert.assertEquals
@@ -45,6 +46,18 @@ class ConvertersTest {
             assertEquals(
                 applicationType,
                 converters.toDebtPaymentApplicationType(converters.fromDebtPaymentApplicationType(applicationType))
+            )
+        }
+    }
+
+    @Test
+    fun financialAdjustmentTargetTypeRoundTripsThroughRoomConverter() {
+        FinancialAdjustmentTargetType.entries.forEach { targetType ->
+            assertEquals(
+                targetType,
+                converters.toFinancialAdjustmentTargetType(
+                    converters.fromFinancialAdjustmentTargetType(targetType)
+                )
             )
         }
     }

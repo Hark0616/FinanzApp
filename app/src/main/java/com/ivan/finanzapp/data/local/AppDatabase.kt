@@ -13,6 +13,7 @@ import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.DebtPaymentApplicationDao
+import com.ivan.finanzapp.data.local.dao.FinancialAdjustmentDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
@@ -23,6 +24,7 @@ import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.CategoryEntity
 import com.ivan.finanzapp.data.local.entity.CreditCardEntity
 import com.ivan.finanzapp.data.local.entity.DebtPaymentApplicationEntity
+import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentEntity
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.LoanEntity
@@ -54,9 +56,10 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         NotificationSyncLedgerEntity::class,
         SyncDeleteLogEntity::class,
         PaymentMatchSuggestionEntity::class,
-        DebtPaymentApplicationEntity::class
+        DebtPaymentApplicationEntity::class,
+        FinancialAdjustmentEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -76,6 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun syncDeleteLogDao(): SyncDeleteLogDao
     abstract fun paymentMatchSuggestionDao(): PaymentMatchSuggestionDao
     abstract fun debtPaymentApplicationDao(): DebtPaymentApplicationDao
+    abstract fun financialAdjustmentDao(): FinancialAdjustmentDao
 
 
     companion object {
@@ -337,6 +341,40 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `financial_adjustments` (
+                        `id` TEXT NOT NULL,
+                        `targetType` TEXT NOT NULL,
+                        `targetId` TEXT NOT NULL,
+                        `targetName` TEXT NOT NULL,
+                        `previousValue` REAL NOT NULL,
+                        `newValue` REAL NOT NULL,
+                        `delta` REAL NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `note` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_financial_adjustments_targetId` ON `financial_adjustments` (`targetId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_financial_adjustments_targetType` ON `financial_adjustments` (`targetType`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_financial_adjustments_createdAt` ON `financial_adjustments` (`createdAt`)")
+                db.execSQL(
+                    """
+                    CREATE TRIGGER IF NOT EXISTS `log_financial_adjustments_delete` AFTER DELETE ON `financial_adjustments`
+                    BEGIN
+                        INSERT INTO `sync_delete_log` (`tableName`, `recordId`, `createdAt`)
+                        VALUES ('financial_adjustments', OLD.`id`, CAST((strftime('%s','now') * 1000) AS INTEGER));
+                    END;
+                    """.trimIndent()
+                )
+            }
+        }
+
         val DB_CALLBACK = object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
@@ -361,7 +399,8 @@ abstract class AppDatabase : RoomDatabase() {
                     "custom_rules" to "id",
                     "notification_sync_ledger" to "id",
                     "payment_match_suggestions" to "id",
-                    "debt_payment_applications" to "id"
+                    "debt_payment_applications" to "id",
+                    "financial_adjustments" to "id"
                 )
                 for ((table, pk) in tables) {
                     db.execSQL(
@@ -430,7 +469,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_11_12,
                     MIGRATION_12_13,
                     MIGRATION_13_14,
-                    MIGRATION_14_15
+                    MIGRATION_14_15,
+                    MIGRATION_15_16
                 )
                 .addCallback(DB_CALLBACK)
                 .fallbackToDestructiveMigration(dropAllTables = true)

@@ -7,6 +7,7 @@ import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.data.local.entity.AssetType
 import com.ivan.finanzapp.data.local.entity.DebtPaymentApplicationType
+import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentTargetType
 import com.ivan.finanzapp.data.local.entity.NotificationProcessingStatus
 import com.ivan.finanzapp.data.local.entity.PaymentMatchStatus
 import com.ivan.finanzapp.data.local.entity.PaymentMatchTargetType
@@ -84,4 +85,12 @@ class Converters {
     fun toDebtPaymentApplicationType(value: String): DebtPaymentApplicationType =
         DebtPaymentApplicationType.entries.firstOrNull { it.name == value }
             ?: DebtPaymentApplicationType.CARD_EXTRA_PAYMENT
+
+    @TypeConverter
+    fun fromFinancialAdjustmentTargetType(value: FinancialAdjustmentTargetType): String = value.name
+
+    @TypeConverter
+    fun toFinancialAdjustmentTargetType(value: String): FinancialAdjustmentTargetType =
+        FinancialAdjustmentTargetType.entries.firstOrNull { it.name == value }
+            ?: FinancialAdjustmentTargetType.ACCOUNT_BALANCE
 }

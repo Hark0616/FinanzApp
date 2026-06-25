@@ -38,6 +38,7 @@ class SupabaseSyncManager @Inject constructor(
     private val notificationSyncLedgerDao: NotificationSyncLedgerDao,
     private val paymentMatchSuggestionDao: PaymentMatchSuggestionDao,
     private val debtPaymentApplicationDao: DebtPaymentApplicationDao,
+    private val financialAdjustmentDao: FinancialAdjustmentDao,
     private val syncDeleteLogDao: SyncDeleteLogDao
 ) {
     private val postgrestModule = supabaseClient.postgrest
@@ -188,6 +189,14 @@ class SupabaseSyncManager @Inject constructor(
                 uploadedRows += dtos.size
             }
 
+            // 14. Ajustes financieros manuales auditados
+            val localAdjustments = financialAdjustmentDao.getAllSnapshot()
+            if (localAdjustments.isNotEmpty()) {
+                val dtos = localAdjustments.map { it.toDto().copy(user_id = userId) }
+                postgrestModule.from("financial_adjustments").upsert(dtos)
+                uploadedRows += dtos.size
+            }
+
             // ==========================================
             // FASE 3: DESCARGAR CAMBIOS NUEVOS DESDE LA NUBE
             // ==========================================
@@ -257,6 +266,11 @@ class SupabaseSyncManager @Inject constructor(
                 .select()
                 .decodeList<DebtPaymentApplicationDto>()
 
+            // 14. Ajustes financieros manuales auditados
+            val remoteAdjustments = postgrestModule.from("financial_adjustments")
+                .select()
+                .decodeList<FinancialAdjustmentDto>()
+
             downloadedRows += remoteCategories.size +
                     remoteAccounts.size +
                     remoteCards.size +
@@ -269,7 +283,8 @@ class SupabaseSyncManager @Inject constructor(
                     remoteRules.size +
                     remoteLedger.size +
                     remoteSuggestions.size +
-                    remoteApplications.size
+                    remoteApplications.size +
+                    remoteAdjustments.size
 
             database.withTransaction {
                 for (catDto in remoteCategories) {
@@ -301,6 +316,7 @@ class SupabaseSyncManager @Inject constructor(
                 notificationSyncLedgerDao.upsertAll(remoteLedger.map { it.toEntity() })
                 paymentMatchSuggestionDao.upsertAll(remoteSuggestions.map { it.toEntity() })
                 debtPaymentApplicationDao.upsertAll(remoteApplications.map { it.toEntity() })
+                financialAdjustmentDao.upsertAll(remoteAdjustments.map { it.toEntity() })
             }
 
             securePrefs.setLastCloudSyncAt(System.currentTimeMillis())

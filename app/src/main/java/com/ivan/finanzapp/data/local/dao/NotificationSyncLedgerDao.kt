@@ -39,6 +39,15 @@ interface NotificationSyncLedgerDao {
     @Query("SELECT COUNT(*) FROM notification_sync_ledger WHERE status = :status")
     fun observeCountByStatus(status: NotificationProcessingStatus): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM notification_sync_ledger WHERE receivedAtMillis >= :sinceMillis")
+    fun observeCountSince(sinceMillis: Long): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM notification_sync_ledger WHERE status = :status AND receivedAtMillis >= :sinceMillis")
+    fun observeCountByStatusSince(status: NotificationProcessingStatus, sinceMillis: Long): Flow<Int>
+
+    @Query("SELECT * FROM notification_sync_ledger WHERE status = :status ORDER BY receivedAtMillis DESC LIMIT 1")
+    fun observeLatestByStatus(status: NotificationProcessingStatus): Flow<NotificationSyncLedgerEntity?>
+
     @Query("SELECT * FROM notification_sync_ledger")
     suspend fun getAllSnapshot(): List<NotificationSyncLedgerEntity>
 }

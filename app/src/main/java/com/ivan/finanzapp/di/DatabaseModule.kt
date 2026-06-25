@@ -9,6 +9,7 @@ import com.ivan.finanzapp.data.local.dao.CategoryDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.DebtPaymentApplicationDao
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
+import com.ivan.finanzapp.data.local.dao.FinancialAdjustmentDao
 import com.ivan.finanzapp.data.local.dao.LoanDao
 import com.ivan.finanzapp.data.local.dao.LoanPaymentDao
 import com.ivan.finanzapp.data.local.dao.MerchantCategoryMappingDao
@@ -89,4 +90,8 @@ object DatabaseModule {
     @Provides
     fun provideDebtPaymentApplicationDao(db: AppDatabase): DebtPaymentApplicationDao =
         db.debtPaymentApplicationDao()
+
+    @Provides
+    fun provideFinancialAdjustmentDao(db: AppDatabase): FinancialAdjustmentDao =
+        db.financialAdjustmentDao()
 }

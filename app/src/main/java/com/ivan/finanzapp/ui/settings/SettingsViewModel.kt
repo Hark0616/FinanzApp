@@ -1,19 +1,30 @@
 package com.ivan.finanzapp.ui.settings
 
+import android.content.Context
+import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.ivan.finanzapp.BuildConfig
+import com.ivan.finanzapp.data.local.AppDatabase
 import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.remote.LocalAiClassifier
 import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.CustomRuleDao
+import com.ivan.finanzapp.data.local.dao.FinancialAdjustmentDao
+import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.CreditCardEntity
 import com.ivan.finanzapp.data.local.entity.CustomRuleEntity
+import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentEntity
+import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentTargetType
+import com.ivan.finanzapp.data.local.entity.NotificationProcessingStatus
+import com.ivan.finanzapp.data.local.entity.NotificationSyncLedgerEntity
 import com.ivan.finanzapp.domain.model.AccountType
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,10 +37,14 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @param:ApplicationContext private val context: Context,
+    private val database: AppDatabase,
     private val securePrefs: SecurePrefs,
     private val accountDao: AccountDao,
     private val creditCardDao: CreditCardDao,
     private val customRuleDao: CustomRuleDao,
+    private val notificationSyncLedgerDao: NotificationSyncLedgerDao,
+    private val financialAdjustmentDao: FinancialAdjustmentDao,
     private val localAiClassifier: LocalAiClassifier,
     private val authManager: com.ivan.finanzapp.data.remote.SupabaseAuthManager,
     private val syncManager: com.ivan.finanzapp.data.remote.SupabaseSyncManager,
@@ -47,6 +62,8 @@ class SettingsViewModel @Inject constructor(
     private val _syncErrorMessage = MutableStateFlow<String?>(null)
     private val _syncStateVersion = MutableStateFlow(0)
     private val _appLockChanged = MutableStateFlow(false)
+    private val _notificationPermissionCheckTrigger = MutableStateFlow(0)
+    private val recentLedgerWindowStart = System.currentTimeMillis() - RECENT_CAPTURE_WINDOW_MILLIS
 
     val uiState: StateFlow<SettingsUiState> = combine(
         accountDao.observeAccounts(),
@@ -63,7 +80,18 @@ class SettingsViewModel @Inject constructor(
         _syncErrorMessage,
         _syncStateVersion,
         _appLockChanged,
-        creditCardDao.observeAll()
+        creditCardDao.observeAll(),
+        notificationSyncLedgerDao.observeRecent(limit = 1),
+        notificationSyncLedgerDao.observeCountByStatus(NotificationProcessingStatus.RECEIVED),
+        notificationSyncLedgerDao.observeCountByStatus(NotificationProcessingStatus.PARSED),
+        notificationSyncLedgerDao.observeCountByStatus(NotificationProcessingStatus.DUPLICATE),
+        notificationSyncLedgerDao.observeCountByStatus(NotificationProcessingStatus.FAILED),
+        notificationSyncLedgerDao.observeCountByStatus(NotificationProcessingStatus.IGNORED),
+        notificationSyncLedgerDao.observeCountSince(recentLedgerWindowStart),
+        notificationSyncLedgerDao.observeCountByStatusSince(NotificationProcessingStatus.FAILED, recentLedgerWindowStart),
+        notificationSyncLedgerDao.observeLatestByStatus(NotificationProcessingStatus.PARSED),
+        financialAdjustmentDao.observeRecent(limit = 8),
+        _notificationPermissionCheckTrigger
     ) { flows ->
         @Suppress("UNCHECKED_CAST")
         val accounts = flows[0] as List<AccountEntity>
@@ -81,6 +109,18 @@ class SettingsViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         val creditCards = flows[14] as List<CreditCardEntity>
         val creditCardsMap = creditCards.associateBy { it.accountId }
+        @Suppress("UNCHECKED_CAST")
+        val latestLedger = (flows[15] as List<NotificationSyncLedgerEntity>).firstOrNull()
+        val receivedCount = flows[16] as Int
+        val parsedCount = flows[17] as Int
+        val duplicateCount = flows[18] as Int
+        val failedCount = flows[19] as Int
+        val ignoredCount = flows[20] as Int
+        val recentCount = flows[21] as Int
+        val recentFailedCount = flows[22] as Int
+        val latestParsedLedger = flows[23] as NotificationSyncLedgerEntity?
+        @Suppress("UNCHECKED_CAST")
+        val recentAdjustments = flows[24] as List<FinancialAdjustmentEntity>
 
         SettingsUiState(
             isLoading = false,
@@ -101,7 +141,18 @@ class SettingsViewModel @Inject constructor(
             syncStatusMessage = syncStatusMessage,
             syncErrorMessage = syncErrorMessage,
             isAppLockEnabled = securePrefs.isAppLockEnabled(),
-            isSecurityLabMode = BuildConfig.SECURITY_LAB_MODE
+            isSecurityLabMode = BuildConfig.SECURITY_LAB_MODE,
+            latestLedgerEntry = latestLedger,
+            ledgerReceivedCount = receivedCount,
+            ledgerParsedCount = parsedCount,
+            ledgerDuplicateCount = duplicateCount,
+            ledgerFailedCount = failedCount,
+            ledgerIgnoredCount = ignoredCount,
+            ledgerRecentCount = recentCount,
+            ledgerRecentFailedCount = recentFailedCount,
+            latestParsedLedgerEntry = latestParsedLedger,
+            isNotificationListenerEnabled = isNotificationListenerEnabled(),
+            recentFinancialAdjustments = recentAdjustments
         )
     }.stateIn(
         scope = viewModelScope,
@@ -144,6 +195,10 @@ class SettingsViewModel @Inject constructor(
     fun setAppLockEnabled(enabled: Boolean) {
         securePrefs.setAppLockEnabled(enabled)
         _appLockChanged.update { !it }
+    }
+
+    fun refreshNotificationPermission() {
+        _notificationPermissionCheckTrigger.update { it + 1 }
     }
 
     fun saveApiKey(apiKey: String) {
@@ -215,20 +270,99 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun updateAccountBalance(accountId: String, newBalance: Double) {
+    fun recordAccountBalanceCorrection(accountId: String, newBalance: Double, reason: String) {
         viewModelScope.launch {
-            val account = accountDao.getAccountById(accountId) ?: return@launch
-            accountDao.upsert(account.copy(currentBalance = newBalance, isManualBalance = true))
-            cloudSyncScheduler.syncSoon()
+            val cleanReason = reason.trim()
+            if (cleanReason.isBlank()) return@launch
+            var shouldSync = false
+            database.withTransaction {
+                val account = accountDao.getAccountById(accountId) ?: return@withTransaction
+                if (account.currentBalance == newBalance) return@withTransaction
+                financialAdjustmentDao.upsert(
+                    financialAdjustment(
+                        targetType = FinancialAdjustmentTargetType.ACCOUNT_BALANCE,
+                        targetId = account.id,
+                        targetName = account.name,
+                        previousValue = account.currentBalance,
+                        newValue = newBalance,
+                        reason = cleanReason
+                    )
+                )
+                accountDao.upsert(account.copy(currentBalance = newBalance, isManualBalance = true))
+                shouldSync = true
+            }
+            if (shouldSync) cloudSyncScheduler.syncSoon()
         }
     }
 
-    fun updateCreditCardDetails(accountId: String, limit: Double, debt: Double) {
+    fun recordCreditCardCorrection(accountId: String, limit: Double, debt: Double, reason: String) {
         viewModelScope.launch {
-            val card = creditCardDao.getByAccountId(accountId) ?: return@launch
-            creditCardDao.upsert(card.copy(creditLimit = limit, currentDebt = debt))
-            cloudSyncScheduler.syncSoon()
+            val cleanReason = reason.trim()
+            if (cleanReason.isBlank()) return@launch
+            var shouldSync = false
+            database.withTransaction {
+                val account = accountDao.getAccountById(accountId) ?: return@withTransaction
+                val card = creditCardDao.getByAccountId(accountId) ?: return@withTransaction
+                var updatedCard = card
+
+                if (card.creditLimit != limit) {
+                    financialAdjustmentDao.upsert(
+                        financialAdjustment(
+                            targetType = FinancialAdjustmentTargetType.CREDIT_CARD_LIMIT,
+                            targetId = card.id,
+                            targetName = account.name,
+                            previousValue = card.creditLimit,
+                            newValue = limit,
+                            reason = cleanReason
+                        )
+                    )
+                    updatedCard = updatedCard.copy(creditLimit = limit)
+                }
+
+                if (card.currentDebt != debt) {
+                    financialAdjustmentDao.upsert(
+                        financialAdjustment(
+                            targetType = FinancialAdjustmentTargetType.CREDIT_CARD_DEBT,
+                            targetId = card.id,
+                            targetName = account.name,
+                            previousValue = card.currentDebt,
+                            newValue = debt,
+                            reason = cleanReason,
+                            note = "No registra pago ni compra; solo corrige la deuda visible."
+                        )
+                    )
+                    updatedCard = updatedCard.copy(currentDebt = debt)
+                }
+
+                if (updatedCard != card) {
+                    creditCardDao.upsert(updatedCard)
+                    shouldSync = true
+                }
+            }
+            if (shouldSync) cloudSyncScheduler.syncSoon()
         }
+    }
+
+    private fun financialAdjustment(
+        targetType: FinancialAdjustmentTargetType,
+        targetId: String,
+        targetName: String,
+        previousValue: Double,
+        newValue: Double,
+        reason: String,
+        note: String? = null
+    ): FinancialAdjustmentEntity {
+        return FinancialAdjustmentEntity(
+            id = UUID.randomUUID().toString(),
+            targetType = targetType,
+            targetId = targetId,
+            targetName = targetName,
+            previousValue = previousValue,
+            newValue = newValue,
+            delta = newValue - previousValue,
+            reason = reason,
+            note = note
+        )
     }
 
     fun syncNow() {
@@ -263,5 +397,17 @@ class SettingsViewModel @Inject constructor(
             _syncStatusMessage.value = null
             _syncErrorMessage.value = null
         }
+    }
+
+    private fun isNotificationListenerEnabled(): Boolean {
+        val enabledListeners = Settings.Secure.getString(
+            context.contentResolver,
+            "enabled_notification_listeners"
+        ) ?: return false
+        return enabledListeners.contains(context.packageName)
+    }
+
+    private companion object {
+        const val RECENT_CAPTURE_WINDOW_MILLIS = 24L * 60L * 60L * 1000L
     }
 }
