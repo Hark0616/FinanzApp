@@ -681,13 +681,13 @@ private fun CaptureHealthCard(
         total == 0 -> MaterialTheme.colorScheme.onSurfaceVariant
         else -> MaterialTheme.colorScheme.primary
     }
-    val latestParsedText = state.latestParsedLedgerEntry?.let {
-        "Última parseada: ${formatLastSyncTime(it.receivedAtMillis)}"
-    } ?: "Aún no hay una notificación parseada correctamente."
-    val latestText = state.latestLedgerEntry?.let {
+    val latestReceivedText = state.latestLedgerEntry?.let {
         val status = it.status.name.lowercase().replaceFirstChar(Char::titlecase)
-        "Última recibida: ${formatLastSyncTime(it.receivedAtMillis)} · $status"
+        "Recibida ${formatLastSyncTime(it.receivedAtMillis)} · $status"
     } ?: "Aún no se ha recibido una notificación bancaria."
+    val latestText = state.latestParsedLedgerEntry?.let {
+        "Parseada ${formatLastSyncTime(it.receivedAtMillis)}"
+    } ?: latestReceivedText
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -697,7 +697,7 @@ private fun CaptureHealthCard(
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -712,8 +712,8 @@ private fun CaptureHealthCard(
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
-                            .padding(10.dp)
-                            .size(24.dp)
+                            .padding(8.dp)
+                            .size(22.dp)
                     )
                 }
                 Spacer(Modifier.width(14.dp))
@@ -726,11 +726,6 @@ private fun CaptureHealthCard(
                     )
                     Text(
                         text = latestText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = latestParsedText,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -747,20 +742,14 @@ private fun CaptureHealthCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CaptureStatChip("Últimas 24h", state.ledgerRecentCount, Modifier.weight(1f))
+                CaptureStatChip("24h", state.ledgerRecentCount, Modifier.weight(1f))
+                CaptureStatChip("Parseadas", state.ledgerParsedCount, Modifier.weight(1f))
                 CaptureStatChip(
-                    "Fallos 24h",
+                    "Fallos",
                     state.ledgerRecentFailedCount,
                     Modifier.weight(1f),
                     isWarning = state.ledgerRecentFailedCount > 0
                 )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                CaptureStatChip("Parseadas", state.ledgerParsedCount, Modifier.weight(1f))
-                CaptureStatChip("Fallidas", state.ledgerFailedCount, Modifier.weight(1f), isWarning = state.ledgerFailedCount > 0)
             }
 
             if (!state.isNotificationListenerEnabled) {
