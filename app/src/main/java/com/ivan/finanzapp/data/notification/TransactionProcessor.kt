@@ -9,6 +9,7 @@ import com.ivan.finanzapp.data.local.dao.CustomRuleDao
 import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
+import com.ivan.finanzapp.data.local.entity.CustomRuleEntity
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.NotificationProcessingStatus
 import com.ivan.finanzapp.data.local.entity.NotificationSyncLedgerEntity
@@ -17,7 +18,9 @@ import com.ivan.finanzapp.data.notification.parsers.ParsedTransaction
 import com.ivan.finanzapp.data.notification.parsers.ParserDispatcher
 import com.ivan.finanzapp.data.notification.parsers.ParserUtils
 import com.ivan.finanzapp.data.remote.LocalAiClassifier
+import com.ivan.finanzapp.data.remote.LocalAiForegroundRequiredException
 import com.ivan.finanzapp.data.remote.CloudSyncScheduler
+import com.ivan.finanzapp.data.remote.RuleContributionManager
 import com.ivan.finanzapp.data.remote.TransactionAiClassifier
 import com.ivan.finanzapp.data.security.SecureLog
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
@@ -28,11 +31,14 @@ import com.ivan.finanzapp.domain.usecase.PaymentReconciliationUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import android.content.Context
-import androidx.glance.appwidget.updateAll
-import com.ivan.finanzapp.ui.widget.FinanzAppWidget
+import com.ivan.finanzapp.ui.widget.WidgetUpdater
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -59,6 +65,7 @@ class TransactionProcessor @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val database: AppDatabase,
     private val parserDispatcher: ParserDispatcher,
+    private val notificationAiGate: NotificationAiGate,
     private val aiClassifier: TransactionAiClassifier,
     private val localAiClassifier: LocalAiClassifier,
     private val securePrefs: SecurePrefs,
@@ -72,10 +79,15 @@ class TransactionProcessor @Inject constructor(
     private val notificationSyncLedgerDao: NotificationSyncLedgerDao,
     private val calculator: CreditCardCalculator,
     private val paymentReconciliationUseCase: PaymentReconciliationUseCase,
-    private val cloudSyncScheduler: CloudSyncScheduler
+    private val cloudSyncScheduler: CloudSyncScheduler,
+    private val ruleContributionManager: RuleContributionManager
 ) {
 
     private val processorScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val queuedProcessingGuard = AtomicBoolean(false)
+    private val _isProcessingQueuedNotifications = MutableStateFlow(false)
+    val isProcessingQueuedNotifications: StateFlow<Boolean> =
+        _isProcessingQueuedNotifications.asStateFlow()
 
     /**
      * Punto de entrada no bloqueante llamado desde [TransactionNotificationListenerService].
@@ -111,11 +123,7 @@ class TransactionProcessor @Inject constructor(
                 shouldScheduleSync = true
                 process(ledgerEntry)
                 
-                try {
-                    FinanzAppWidget().updateAll(context)
-                } catch (widgetError: Throwable) {
-                    SecureLog.w("TransactionProcessor", "Widget update failed after notification processing.", widgetError)
-                }
+                WidgetUpdater.updateAllWidgets(context)
             } catch (error: Throwable) {
                 if (ledgerPersisted) {
                     notificationSyncLedgerDao.update(
@@ -127,6 +135,60 @@ class TransactionProcessor @Inject constructor(
                     )
                 }
             } finally {
+                if (shouldScheduleSync) {
+                    cloudSyncScheduler.syncSoon()
+                }
+            }
+        }
+    }
+
+    fun processQueuedAsync() {
+        if (!queuedProcessingGuard.compareAndSet(false, true)) return
+
+        processorScope.launch {
+            _isProcessingQueuedNotifications.value = true
+            var shouldScheduleSync = false
+            try {
+                SecureLog.i("TransactionProcessor", "Processing queued notifications.")
+                while (localAiClassifier.isAppInForeground()) {
+                    val next = notificationSyncLedgerDao.getOldestByStatus(
+                        status = NotificationProcessingStatus.QUEUED,
+                        limit = 1
+                    ).firstOrNull() ?: break
+
+                    val retryEntry = next.copy(
+                        status = NotificationProcessingStatus.RECEIVED,
+                        statusReason = "retrying_queued_local_ai",
+                        errorMessage = null,
+                        updatedAtMillis = System.currentTimeMillis()
+                    )
+                    notificationSyncLedgerDao.update(retryEntry)
+                    shouldScheduleSync = true
+
+                    try {
+                        process(retryEntry)
+                        WidgetUpdater.updateAllWidgets(context)
+                        val updatedEntry = notificationSyncLedgerDao.getById(next.id)
+                        if (updatedEntry?.status == NotificationProcessingStatus.QUEUED) {
+                            SecureLog.i(
+                                "TransactionProcessor",
+                                "Queued processing paused; local AI still requires foreground."
+                            )
+                            break
+                        }
+                    } catch (error: Throwable) {
+                        notificationSyncLedgerDao.update(
+                            retryEntry.withStatus(
+                                status = NotificationProcessingStatus.FAILED,
+                                reason = "queued_processing_exception",
+                                errorMessage = error.toLedgerError()
+                            )
+                        )
+                    }
+                }
+            } finally {
+                _isProcessingQueuedNotifications.value = false
+                queuedProcessingGuard.set(false)
                 if (shouldScheduleSync) {
                     cloudSyncScheduler.syncSoon()
                 }
@@ -151,16 +213,19 @@ class TransactionProcessor @Inject constructor(
             return
         }
 
-        val parsedResult = parseNotification(ledgerEntry)
-        if (parsedResult == null) {
-            SecureLog.d("TransactionProcessor", "Processing ignored: no_transaction_detected")
-            notificationSyncLedgerDao.update(
-                ledgerEntry.withStatus(
-                    status = NotificationProcessingStatus.IGNORED,
-                    reason = "no_transaction_detected"
+        val parsedResult = when (val outcome = parseNotification(ledgerEntry)) {
+            is NotificationParseOutcome.Parsed -> outcome.result
+            NotificationParseOutcome.QueuedForLocalAi -> return
+            is NotificationParseOutcome.NoTransaction -> {
+                SecureLog.d("TransactionProcessor", "Processing ignored: ${outcome.reason}")
+                notificationSyncLedgerDao.update(
+                    ledgerEntry.withStatus(
+                        status = NotificationProcessingStatus.IGNORED,
+                        reason = outcome.reason
+                    )
                 )
-            )
-            return
+                return
+            }
         }
 
         val transaction = parsedResult.transaction
@@ -232,77 +297,158 @@ class TransactionProcessor @Inject constructor(
             notificationSyncLedgerDao.update(parsedLedgerEntry)
             createdTransaction = entity
         }
-        createdTransaction?.let { paymentReconciliationUseCase.generateSuggestionsForTransaction(it) }
+        createdTransaction?.let {
+            paymentReconciliationUseCase.generateSuggestionsForTransaction(it)
+            if (parsedResult.customRule != null && parsedResult.classifierSource == SOURCE_CUSTOM_RULE) {
+                ruleContributionManager.contributeValidatedRule(
+                    rule = parsedResult.customRule,
+                    packageName = ledgerEntry.packageName,
+                    parsedTransaction = transaction,
+                    transactionIdHash = it.id,
+                    classifierSource = parsedResult.classifierSource,
+                    validatedAtMillis = System.currentTimeMillis()
+                ).onFailure { contributionError ->
+                    SecureLog.w(
+                        "TransactionProcessor",
+                        "Validated custom rule contribution failed.",
+                        contributionError
+                    )
+                }
+            }
+        }
     }
 
     private suspend fun parseNotification(
         ledgerEntry: NotificationSyncLedgerEntity
-    ): ParsedNotificationResult? {
+    ): NotificationParseOutcome {
         parserDispatcher.dispatch(ledgerEntry.packageName, ledgerEntry.title, ledgerEntry.text)
             ?.let { parsed ->
-                return ParsedNotificationResult(
-                    transaction = parsed,
-                    aiCategoryName = null,
-                    classifierSource = SOURCE_RULES
+                return NotificationParseOutcome.Parsed(
+                    ParsedNotificationResult(
+                        transaction = parsed,
+                        aiCategoryName = null,
+                        classifierSource = SOURCE_RULES
+                    )
                 )
             }
 
-        parseWithCustomRules(ledgerEntry.title, ledgerEntry.text)?.let { parsed ->
-            return ParsedNotificationResult(
-                transaction = parsed,
-                aiCategoryName = null,
-                classifierSource = SOURCE_CUSTOM_RULE
+        parseWithCustomRules(ledgerEntry.title, ledgerEntry.text)?.let { result ->
+            return NotificationParseOutcome.Parsed(
+                ParsedNotificationResult(
+                    transaction = result.transaction,
+                    aiCategoryName = null,
+                    classifierSource = SOURCE_CUSTOM_RULE,
+                    customRule = result.rule
+                )
             )
         }
 
-        val mode = securePrefs.getNotificationProcessingMode()
-        if (mode == SecurePrefs.MODE_LOCAL_AI || mode == SecurePrefs.MODE_PARSER) {
-            val localResult = localAiClassifier.classifyLocally(
-                ledgerEntry.packageName,
-                ledgerEntry.title,
-                ledgerEntry.text
+        val aiGateDecision = notificationAiGate.evaluate(
+            packageName = ledgerEntry.packageName,
+            title = ledgerEntry.title,
+            text = ledgerEntry.text
+        )
+        if (!aiGateDecision.shouldAnalyze) {
+            SecureLog.d(
+                "TransactionProcessor",
+                "AI fallback skipped by gate: ${aiGateDecision.reason}"
             )
+            return NotificationParseOutcome.NoTransaction(aiGateDecision.reason)
+        }
+
+        val mode = securePrefs.getNotificationProcessingMode()
+        SecureLog.d("TransactionProcessor", "Parser rules failed. Trying AI fallback mode=$mode")
+        if (mode == SecurePrefs.MODE_LOCAL_AI || mode == SecurePrefs.MODE_PARSER) {
+            if (localAiClassifier.shouldDeferUntilForeground()) {
+                queueForLocalAiForeground(ledgerEntry)
+                return NotificationParseOutcome.QueuedForLocalAi
+            }
+
+            SecureLog.d(
+                "TransactionProcessor",
+                "Trying local AI. enabled=${localAiClassifier.isLocalAiEnabled()}, supported=${localAiClassifier.isLocalAiSupported()}"
+            )
+            val localResult = try {
+                localAiClassifier.classifyLocally(
+                    ledgerEntry.packageName,
+                    ledgerEntry.title,
+                    ledgerEntry.text
+                )
+            } catch (foregroundRequired: LocalAiForegroundRequiredException) {
+                queueForLocalAiForeground(ledgerEntry)
+                return NotificationParseOutcome.QueuedForLocalAi
+            }
             if (localResult != null) {
-                return ParsedNotificationResult(
-                    transaction = localResult.first,
-                    aiCategoryName = localResult.second,
-                    classifierSource = SOURCE_LOCAL_AI
+                SecureLog.d("TransactionProcessor", "Local AI parsed notification")
+                return NotificationParseOutcome.Parsed(
+                    ParsedNotificationResult(
+                        transaction = localResult.first,
+                        aiCategoryName = localResult.second,
+                        classifierSource = SOURCE_LOCAL_AI
+                    )
                 )
             }
 
             if (mode == SecurePrefs.MODE_PARSER) {
+                SecureLog.d(
+                    "TransactionProcessor",
+                    "Trying cloud AI fallback from parser mode. hasOpenRouterKey=${securePrefs.getOpenRouterApiKey() != null}"
+                )
                 val cloudResult = aiClassifier.classifyWithCategory(
                     ledgerEntry.packageName,
                     ledgerEntry.title,
                     ledgerEntry.text
                 )
                 if (cloudResult != null) {
-                    return ParsedNotificationResult(
-                        transaction = cloudResult.first,
-                        aiCategoryName = cloudResult.second,
-                        classifierSource = SOURCE_CLOUD_AI
+                    SecureLog.d("TransactionProcessor", "Cloud AI parsed notification from parser mode")
+                    return NotificationParseOutcome.Parsed(
+                        ParsedNotificationResult(
+                            transaction = cloudResult.first,
+                            aiCategoryName = cloudResult.second,
+                            classifierSource = SOURCE_CLOUD_AI
+                        )
                     )
                 }
             }
         } else if (mode == SecurePrefs.MODE_CLOUD_AI) {
+            SecureLog.d(
+                "TransactionProcessor",
+                "Trying cloud AI. hasOpenRouterKey=${securePrefs.getOpenRouterApiKey() != null}"
+            )
             val cloudResult = aiClassifier.classifyWithCategory(
                 ledgerEntry.packageName,
                 ledgerEntry.title,
                 ledgerEntry.text
             )
             if (cloudResult != null) {
-                return ParsedNotificationResult(
-                    transaction = cloudResult.first,
-                    aiCategoryName = cloudResult.second,
-                    classifierSource = SOURCE_CLOUD_AI
+                SecureLog.d("TransactionProcessor", "Cloud AI parsed notification")
+                return NotificationParseOutcome.Parsed(
+                    ParsedNotificationResult(
+                        transaction = cloudResult.first,
+                        aiCategoryName = cloudResult.second,
+                        classifierSource = SOURCE_CLOUD_AI
+                    )
                 )
             }
         }
 
-        return null
+        return NotificationParseOutcome.NoTransaction("no_transaction_detected")
     }
 
-    private suspend fun parseWithCustomRules(title: String, text: String): ParsedTransaction? {
+    private suspend fun queueForLocalAiForeground(ledgerEntry: NotificationSyncLedgerEntity) {
+        SecureLog.i(
+            "TransactionProcessor",
+            "Queueing notification until app foreground for local AI."
+        )
+        notificationSyncLedgerDao.update(
+            ledgerEntry.withStatus(
+                status = NotificationProcessingStatus.QUEUED,
+                reason = "awaiting_local_ai_foreground"
+            )
+        )
+    }
+
+    private suspend fun parseWithCustomRules(title: String, text: String): CustomRuleParseResult? {
         val customRules = customRuleDao.getAll()
         val fullMessage = "$title $text"
         SecureLog.d("TransactionProcessor", "Evaluating custom rules. Count: ${customRules.size}")
@@ -343,13 +489,16 @@ class TransactionProcessor @Inject constructor(
                 com.ivan.finanzapp.domain.model.BankSource.valueOf(rule.bankSource)
             }.getOrDefault(com.ivan.finanzapp.domain.model.BankSource.DESCONOCIDO)
 
-            return ParsedTransaction(
-                type = txType,
-                amount = amount,
-                merchant = matchResult.groups["merchant"]?.value ?: "Transaccion Personalizada",
-                availableBalance = null,
-                source = bankSource,
-                confidence = 1.0
+            return CustomRuleParseResult(
+                transaction = ParsedTransaction(
+                    type = txType,
+                    amount = amount,
+                    merchant = matchResult.groups["merchant"]?.value ?: "Transaccion Personalizada",
+                    availableBalance = null,
+                    source = bankSource,
+                    confidence = 1.0
+                ),
+                rule = rule
             )
         }
 
@@ -503,7 +652,11 @@ class TransactionProcessor @Inject constructor(
             status = status,
             statusReason = reason,
             errorMessage = errorMessage,
-            processedAtMillis = now,
+            processedAtMillis = if (status == NotificationProcessingStatus.QUEUED) {
+                processedAtMillis
+            } else {
+                now
+            },
             updatedAtMillis = now
         )
     }
@@ -544,5 +697,17 @@ class TransactionProcessor @Inject constructor(
 private data class ParsedNotificationResult(
     val transaction: ParsedTransaction,
     val aiCategoryName: String?,
-    val classifierSource: String
+    val classifierSource: String,
+    val customRule: CustomRuleEntity? = null
+)
+
+private sealed interface NotificationParseOutcome {
+    data class Parsed(val result: ParsedNotificationResult) : NotificationParseOutcome
+    data object QueuedForLocalAi : NotificationParseOutcome
+    data class NoTransaction(val reason: String) : NotificationParseOutcome
+}
+
+private data class CustomRuleParseResult(
+    val transaction: ParsedTransaction,
+    val rule: CustomRuleEntity
 )

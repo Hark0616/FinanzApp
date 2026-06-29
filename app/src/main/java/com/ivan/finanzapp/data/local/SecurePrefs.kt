@@ -71,6 +71,15 @@ class SecurePrefs @Inject constructor(
         prefs.edit().putString(KEY_PROCESSING_MODE, mode).apply()
     }
 
+    fun getCloudAiProvider(): String {
+        return prefs.getString(KEY_CLOUD_AI_PROVIDER, CLOUD_PROVIDER_OPENROUTER_DIRECT)
+            ?: CLOUD_PROVIDER_OPENROUTER_DIRECT
+    }
+
+    fun setCloudAiProvider(provider: String) {
+        prefs.edit().putString(KEY_CLOUD_AI_PROVIDER, provider).apply()
+    }
+
     fun getLastCloudSyncAt(): Long = prefs.getLong(KEY_LAST_CLOUD_SYNC_AT, 0L)
 
     fun setLastCloudSyncAt(timestampMillis: Long) {
@@ -88,11 +97,15 @@ class SecurePrefs @Inject constructor(
         private const val KEY_OPENROUTER_API_KEY = "openrouter_api_key"
         private const val KEY_LOCAL_AI_ENABLED = "local_ai_enabled"
         private const val KEY_PROCESSING_MODE = "processing_mode"
+        private const val KEY_CLOUD_AI_PROVIDER = "cloud_ai_provider"
         private const val KEY_LAST_CLOUD_SYNC_AT = "last_cloud_sync_at"
         private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
 
         const val MODE_PARSER = "PARSER"
         const val MODE_LOCAL_AI = "LOCAL_AI"
         const val MODE_CLOUD_AI = "CLOUD_AI"
+
+        const val CLOUD_PROVIDER_OPENROUTER_DIRECT = "OPENROUTER_DIRECT"
+        const val CLOUD_PROVIDER_SUPABASE_EDGE = "SUPABASE_EDGE"
     }
 }

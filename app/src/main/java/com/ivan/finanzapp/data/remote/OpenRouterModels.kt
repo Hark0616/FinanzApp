@@ -13,6 +13,8 @@ data class OpenRouterRequest(
     val model: String,
     val messages: List<ChatMessage>,
     val temperature: Double = 0.1,
+    @param:Json(name = "max_tokens") val maxTokens: Int = 160,
+    @param:Json(name = "include_reasoning") val includeReasoning: Boolean = false,
     @param:Json(name = "response_format") val responseFormat: ResponseFormat? = ResponseFormat()
 )
 
@@ -35,6 +37,24 @@ data class OpenRouterResponse(
 @JsonClass(generateAdapter = true)
 data class Choice(
     val message: ChatMessage
+)
+
+@JsonClass(generateAdapter = true)
+data class OpenRouterModelsResponse(
+    val data: List<OpenRouterModelInfo>
+)
+
+@JsonClass(generateAdapter = true)
+data class OpenRouterModelInfo(
+    val id: String,
+    val name: String? = null,
+    val reasoning: OpenRouterModelReasoning? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class OpenRouterModelReasoning(
+    val mandatory: Boolean? = null,
+    @param:Json(name = "default_enabled") val defaultEnabled: Boolean? = null
 )
 
 /**

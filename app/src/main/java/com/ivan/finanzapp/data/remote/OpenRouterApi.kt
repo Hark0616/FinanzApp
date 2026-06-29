@@ -2,6 +2,7 @@ package com.ivan.finanzapp.data.remote
 
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
 
@@ -16,4 +17,7 @@ interface OpenRouterApi {
         @Header("Authorization") authorization: String, // "Bearer sk-or-..."
         @Body request: OpenRouterRequest
     ): Response<OpenRouterResponse>
+
+    @GET("models")
+    suspend fun models(): Response<OpenRouterModelsResponse>
 }

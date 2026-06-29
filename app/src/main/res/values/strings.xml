@@ -41,6 +41,8 @@
     <string name="widget_vencimiento_desc">Avisa del pago más cercano a vencer (tarjeta o crédito).</string>
     <string name="widget_disponible_title">Disponible Neto</string>
     <string name="widget_disponible_desc">Muestra tu saldo disponible consolidado en formato ultra-limpio.</string>
+    <string name="widget_movimientos_title">Últimos Movimientos</string>
+    <string name="widget_movimientos_desc">Muestra las últimas transacciones registradas de forma optimizada.</string>
 
     <!-- Google Auth -->
     <string name="google_web_client_id">1000675040018-npmikovplk9g0sc5s3s2ulnpu6jgkks0.apps.googleusercontent.com</string>

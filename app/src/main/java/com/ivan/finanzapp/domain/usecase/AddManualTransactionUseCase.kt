@@ -7,15 +7,13 @@ import com.ivan.finanzapp.data.local.dao.DeferredPurchaseDao
 import com.ivan.finanzapp.data.local.dao.TransactionDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
-import com.ivan.finanzapp.data.security.SecureLog
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.model.TransactionType
 import android.content.Context
 import androidx.room.withTransaction
 import com.ivan.finanzapp.data.remote.CloudSyncScheduler
-import androidx.glance.appwidget.updateAll
-import com.ivan.finanzapp.ui.widget.FinanzAppWidget
+import com.ivan.finanzapp.ui.widget.WidgetUpdater
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import javax.inject.Inject
@@ -84,11 +82,7 @@ class AddManualTransactionUseCase @Inject constructor(
 
         createdTransaction?.let { paymentReconciliationUseCase.generateSuggestionsForTransaction(it) }
         
-        try {
-            FinanzAppWidget().updateAll(context)
-        } catch (e: Throwable) {
-            SecureLog.w("AddManualTransaction", "Widget update failed after manual transaction.", e)
-        }
+        WidgetUpdater.updateAllWidgets(context)
 
         cloudSyncScheduler.syncSoon()
     }

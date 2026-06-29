@@ -183,6 +183,38 @@ CREATE TABLE IF NOT EXISTS custom_rules (
 -- Enable RLS for custom rules
 ALTER TABLE custom_rules ENABLE ROW LEVEL SECURITY;
 
+-- 10b. VALIDATED RULE CONTRIBUTIONS TABLE
+CREATE TABLE IF NOT EXISTS rule_contributions (
+    id TEXT PRIMARY KEY,
+    "ruleId" TEXT NOT NULL,
+    name TEXT NOT NULL,
+    "regexPattern" TEXT NOT NULL,
+    "transactionType" TEXT NOT NULL,
+    "bankSource" TEXT NOT NULL,
+    "amountFormatType" INTEGER NOT NULL,
+    "validatedPackageName" TEXT NOT NULL,
+    "validatedTransactionType" TEXT NOT NULL,
+    "validatedBankSource" TEXT NOT NULL,
+    "classifierSource" TEXT NOT NULL DEFAULT 'CUSTOM_RULE',
+    "transactionIdHash" TEXT NOT NULL,
+    "validatedAtMillis" BIGINT NOT NULL,
+    "createdAt" BIGINT NOT NULL,
+    "reviewStatus" TEXT NOT NULL DEFAULT 'PENDING',
+    "reviewNotes" TEXT NULL,
+    "approvedAtMillis" BIGINT NULL,
+    contributor_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT auth.uid()
+);
+
+CREATE INDEX IF NOT EXISTS rule_contributions_review_status_idx
+    ON rule_contributions ("reviewStatus", "validatedAtMillis");
+CREATE INDEX IF NOT EXISTS rule_contributions_bank_source_idx
+    ON rule_contributions ("bankSource", "validatedBankSource");
+CREATE UNIQUE INDEX IF NOT EXISTS rule_contributions_rule_user_key
+    ON rule_contributions ("ruleId", contributor_user_id);
+
+-- Enable RLS for rule contributions
+ALTER TABLE rule_contributions ENABLE ROW LEVEL SECURITY;
+
 -- 11. NOTIFICATION SYNC LEDGER TABLE
 CREATE TABLE IF NOT EXISTS notification_sync_ledger (
     id TEXT PRIMARY KEY,
@@ -292,6 +324,9 @@ DROP POLICY IF EXISTS "Manage own loan payments" ON loan_payments;
 DROP POLICY IF EXISTS "Manage own deferred purchases" ON deferred_purchases;
 DROP POLICY IF EXISTS "Manage own assets" ON assets;
 DROP POLICY IF EXISTS "Manage own custom rules" ON custom_rules;
+DROP POLICY IF EXISTS "Read own rule contributions" ON rule_contributions;
+DROP POLICY IF EXISTS "Insert own rule contributions" ON rule_contributions;
+DROP POLICY IF EXISTS "Update own rule contributions" ON rule_contributions;
 DROP POLICY IF EXISTS "Manage own ledger" ON notification_sync_ledger;
 DROP POLICY IF EXISTS "Manage own payment suggestions" ON payment_match_suggestions;
 DROP POLICY IF EXISTS "Manage own debt payment applications" ON debt_payment_applications;
@@ -317,6 +352,8 @@ CREATE POLICY "Manage own loan payments" ON loan_payments FOR ALL USING (auth.ui
 CREATE POLICY "Manage own deferred purchases" ON deferred_purchases FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own assets" ON assets FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own custom rules" ON custom_rules FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Read own rule contributions" ON rule_contributions FOR SELECT USING (auth.uid() = contributor_user_id);
+CREATE POLICY "Insert own rule contributions" ON rule_contributions FOR INSERT WITH CHECK (auth.uid() = contributor_user_id);
 CREATE POLICY "Manage own ledger" ON notification_sync_ledger FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own payment suggestions" ON payment_match_suggestions FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Manage own debt payment applications" ON debt_payment_applications FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);

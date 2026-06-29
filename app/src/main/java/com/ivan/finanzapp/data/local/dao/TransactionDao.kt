@@ -89,4 +89,7 @@ interface TransactionDao {
 
     @Query("SELECT * FROM transactions WHERE timestamp >= :startMillis AND timestamp < :endMillis")
     suspend fun getByDateRangeSnapshot(startMillis: Long, endMillis: Long): List<TransactionEntity>
+
+    @Query("SELECT * FROM transactions ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getRecentTransactionsSnapshot(limit: Int): List<TransactionEntity>
 }

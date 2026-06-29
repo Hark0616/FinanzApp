@@ -745,6 +745,12 @@ private fun CaptureHealthCard(
                 CaptureStatChip("24h", state.ledgerRecentCount, Modifier.weight(1f))
                 CaptureStatChip("Parseadas", state.ledgerParsedCount, Modifier.weight(1f))
                 CaptureStatChip(
+                    "Cola",
+                    state.ledgerQueuedCount,
+                    Modifier.weight(1f),
+                    isWarning = state.ledgerQueuedCount > 0
+                )
+                CaptureStatChip(
                     "Fallos",
                     state.ledgerRecentFailedCount,
                     Modifier.weight(1f),
@@ -1050,12 +1056,15 @@ private fun NotificationModeSelector(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        // Opción 1: Reglas Automáticas Locales
+        // Opción 1: Flujo automático completo
         val isParser = state.processingMode == SecurePrefs.MODE_PARSER
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onModeSelected(SecurePrefs.MODE_PARSER) },
+                .clickable {
+                    onModeSelected(SecurePrefs.MODE_PARSER)
+                    onLocalAiToggle(true)
+                },
             colors = CardDefaults.cardColors(
                 containerColor = if (isParser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
             ),
@@ -1067,17 +1076,20 @@ private fun NotificationModeSelector(
             ) {
                 RadioButton(
                     selected = isParser,
-                    onClick = { onModeSelected(SecurePrefs.MODE_PARSER) }
+                    onClick = {
+                        onModeSelected(SecurePrefs.MODE_PARSER)
+                        onLocalAiToggle(true)
+                    }
                 )
                 Spacer(Modifier.width(8.dp))
                 Column {
                     Text(
-                        text = "Reglas Locales (con Asistencia de IA)",
+                        text = "Automático: Reglas → IA Local → IA Nube",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Procesamiento por reglas. Si fallan, recurre a IA Local (Gemini Nano) y, de ser necesario, a IA en la Nube.",
+                        text = "Primero usa parsers y reglas personalizadas. Si fallan, intenta IA local y luego OpenRouter como último recurso.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1115,7 +1127,7 @@ private fun NotificationModeSelector(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Solo Reglas Locales e IA Local",
+                            text = "Privado: Reglas → IA Local",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = if (state.isLocalAiSupported) Color.Unspecified else Color.Gray
@@ -1136,9 +1148,9 @@ private fun NotificationModeSelector(
                         }
                     }
                     val descText = if (state.isLocalAiSupported) {
-                        "Procesamiento por reglas con fallback únicamente a IA Local (Gemini Nano) para total privacidad offline."
+                        "Usa reglas y fallback local únicamente. No envía notificaciones a OpenRouter."
                     } else {
-                        "IA local requiere un dispositivo premium con NPU integrada (ej. Galaxy S26 Ultra / Pixel 8+)."
+                        "IA local requiere un dispositivo compatible; si no está disponible, este modo no tendrá fallback."
                     }
                     Text(
                         text = descText,
@@ -1171,7 +1183,7 @@ private fun NotificationModeSelector(
                 Spacer(Modifier.width(8.dp))
                 Column {
                     Text(
-                        text = "Solo Reglas Locales e IA en la Nube",
+                        text = "Nube directa: Reglas → IA Nube",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -1184,8 +1196,8 @@ private fun NotificationModeSelector(
             }
         }
 
-        // Sección adicional: Si se selecciona IA en la Nube, pedir la API Key de OpenRouter
-        AnimatedVisibility(visible = isCloudAi) {
+        // Sección adicional: Si el modo puede usar nube, pedir la API Key de OpenRouter.
+        AnimatedVisibility(visible = isParser || isCloudAi) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
@@ -1195,6 +1207,12 @@ private fun NotificationModeSelector(
                         text = "Clave API de OpenRouter:",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    Text(
+                        text = "Se guarda cifrada solo en este dispositivo. No se sincroniza con Supabase ni queda en el backup de tu cuenta.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 6.dp)
                     )
                     OutlinedTextField(

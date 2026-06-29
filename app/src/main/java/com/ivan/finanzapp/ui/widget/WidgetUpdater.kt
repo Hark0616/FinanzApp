@@ -41,6 +41,11 @@ object WidgetUpdater {
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to update ProximoVencimientoWidget", e)
             }
+            try {
+                UltimosMovimientosWidget().updateAll(appContext)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Failed to update UltimosMovimientosWidget", e)
+            }
         }
     }
 }

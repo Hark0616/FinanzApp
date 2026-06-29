@@ -15,6 +15,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <queries>
+        <package android:name="com.google.android.aicore" />
+        <package android:name="com.google.ai.edge.gallery" />
+        <package android:name="com.samsung.android.aicore" />
+    </queries>
+
     <application
         android:name=".FinanzApplication"
         android:allowBackup="${appAllowBackup}"
@@ -116,6 +122,9 @@
             android:permission="android.permission.DUMP">
             <intent-filter>
                 <action android:name="com.ivan.finanzapp.SIMULATE_NOTIFICATION" />
+                <action android:name="com.ivan.finanzapp.DEBUG_SET_PROCESSING" />
+                <action android:name="com.ivan.finanzapp.DEBUG_TEST_LOCAL_AI" />
+                <action android:name="com.ivan.finanzapp.DEBUG_DUMP_QA_STATE" />
             </intent-filter>
         </receiver>
 
@@ -169,6 +178,19 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/disponible_neto_widget_info" />
+        </receiver>
+
+        <!-- Receiver para el Widget de Últimos Movimientos -->
+        <receiver
+            android:name=".ui.widget.UltimosMovimientosWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_movimientos_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/ultimos_movimientos_widget_info" />
         </receiver>
 
     </application>

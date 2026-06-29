@@ -2,8 +2,11 @@ package com.ivan.finanzapp.data.remote
 
 import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.notification.parsers.ParsedTransaction
+import com.ivan.finanzapp.data.security.SecureLog
 import com.ivan.finanzapp.domain.model.BankSource
 import com.ivan.finanzapp.domain.model.TransactionType
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,12 +31,14 @@ class TransactionAiClassifier @Inject constructor(
     private val securePrefs: SecurePrefs
 ) {
 
+    private var resolvedDefaultModel: String? = null
+
     /**
-     * Modelo por defecto: rápido y económico, suficiente para esta tarea
-     * de clasificación simple. El usuario puede cambiarlo desde Ajustes
-     * (no implementado en este MVP, pero la arquitectura lo permite).
+     * Fallback conocido si el catálogo de OpenRouter no se puede consultar.
+     * En ejecución normal se resuelve dinámicamente contra /models para evitar
+     * quedarse anclados a un id obsoleto.
      */
-    private val defaultModel = "google/gemini-flash-1.5"
+    private val fallbackModel = "google/gemini-3.1-flash-lite"
 
     private val systemPrompt = """
         Eres un asistente que analiza notificaciones de aplicaciones bancarias
@@ -67,40 +72,7 @@ class TransactionAiClassifier @Inject constructor(
      *         hubo un error de red, o la respuesta no se pudo interpretar.
      */
     suspend fun classify(packageName: String, title: String, text: String): ParsedTransaction? {
-        val apiKey = securePrefs.getOpenRouterApiKey() ?: return null
-
-        val userPrompt = """
-            Notificación de la app con paquete "$packageName":
-            Título: "$title"
-            Texto: "$text"
-        """.trimIndent()
-
-        val request = OpenRouterRequest(
-            model = defaultModel,
-            messages = listOf(
-                ChatMessage(role = "system", content = systemPrompt),
-                ChatMessage(role = "user", content = userPrompt)
-            )
-        )
-
-        return try {
-            val response = openRouterApi.chatCompletion("Bearer $apiKey", request)
-            if (!response.isSuccessful) return null
-
-            val content = response.body()?.choices?.firstOrNull()?.message?.content ?: return null
-            val result = parseAiJson(content) ?: return null
-
-            ParsedTransaction(
-                type = mapTipo(result.tipo),
-                amount = result.monto,
-                merchant = result.comercio,
-                availableBalance = null,
-                source = BankSource.DESCONOCIDO,
-                confidence = result.confianza
-            )
-        } catch (e: Exception) {
-            null
-        }
+        return classifyWithCategory(packageName, title, text)?.first
     }
 
     /**
@@ -109,6 +81,33 @@ class TransactionAiClassifier @Inject constructor(
      * de parsing por reglas, sino del [com.ivan.finanzapp.domain.usecase.CategoryResolver]).
      */
     suspend fun classifyWithCategory(
+        packageName: String,
+        title: String,
+        text: String
+    ): Pair<ParsedTransaction, String?>? {
+        return when (securePrefs.getCloudAiProvider()) {
+            SecurePrefs.CLOUD_PROVIDER_SUPABASE_EDGE -> {
+                classifyWithSupabaseEdge(packageName, title, text)
+            }
+            else -> {
+                classifyWithOpenRouterDirect(packageName, title, text)
+            }
+        }
+    }
+
+    private suspend fun classifyWithSupabaseEdge(
+        packageName: String,
+        title: String,
+        text: String
+    ): Pair<ParsedTransaction, String?>? {
+        SecureLog.i(
+            "TransactionAiClassifier",
+            "Cloud AI provider SUPABASE_EDGE selected, but Edge Function is not wired yet. Falling back to OpenRouter direct."
+        )
+        return classifyWithOpenRouterDirect(packageName, title, text)
+    }
+
+    private suspend fun classifyWithOpenRouterDirect(
         packageName: String,
         title: String,
         text: String
@@ -122,7 +121,7 @@ class TransactionAiClassifier @Inject constructor(
         """.trimIndent()
 
         val request = OpenRouterRequest(
-            model = defaultModel,
+            model = resolveDefaultModel(),
             messages = listOf(
                 ChatMessage(role = "system", content = systemPrompt),
                 ChatMessage(role = "user", content = userPrompt)
@@ -131,7 +130,10 @@ class TransactionAiClassifier @Inject constructor(
 
         return try {
             val response = openRouterApi.chatCompletion("Bearer $apiKey", request)
-            if (!response.isSuccessful) return null
+            if (!response.isSuccessful) {
+                SecureLog.w("TransactionAiClassifier", "OpenRouter classify failed: HTTP ${response.code()}")
+                return null
+            }
 
             val content = response.body()?.choices?.firstOrNull()?.message?.content ?: return null
             val result = parseAiJson(content) ?: return null
@@ -146,18 +148,22 @@ class TransactionAiClassifier @Inject constructor(
             )
             parsed to result.categoriaSugerida
         } catch (e: Exception) {
+            SecureLog.w("TransactionAiClassifier", "OpenRouter classifyWithCategory failed.", e)
             null
         }
     }
 
     private fun parseAiJson(content: String): AiClassificationResult? {
         return try {
-            val moshi = com.squareup.moshi.Moshi.Builder().build()
+            val moshi = Moshi.Builder()
+                .addLast(KotlinJsonAdapterFactory())
+                .build()
             val adapter = moshi.adapter(AiClassificationResult::class.java)
             // El modelo a veces envuelve el JSON en ```json ... ```; lo limpiamos
             val cleaned = content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             adapter.fromJson(cleaned)
         } catch (e: Exception) {
+            SecureLog.w("TransactionAiClassifier", "AI JSON parsing failed.", e)
             null
         }
     }
@@ -165,4 +171,79 @@ class TransactionAiClassifier @Inject constructor(
     private fun mapTipo(tipo: String): TransactionType {
         return TransactionType.entries.firstOrNull { it.name == tipo } ?: TransactionType.GASTO
     }
+
+    private suspend fun resolveDefaultModel(): String {
+        resolvedDefaultModel?.let { return it }
+
+        val selected = runCatching {
+            val response = openRouterApi.models()
+            if (!response.isSuccessful) return@runCatching null
+            response.body()?.data
+                ?.let(::selectBestGeminiFlashModel)
+        }.onFailure {
+            SecureLog.w("TransactionAiClassifier", "OpenRouter model discovery failed.", it)
+        }.getOrNull()
+
+        return (selected ?: fallbackModel).also {
+            resolvedDefaultModel = it
+            SecureLog.i("TransactionAiClassifier", "Using OpenRouter model: $it")
+        }
+    }
+
+    private fun selectBestGeminiFlashModel(models: List<OpenRouterModelInfo>): String? {
+        val candidates = models
+            .asSequence()
+            .filterNot { it.reasoning?.mandatory == true }
+            .map { it.id }
+            .filter { it.startsWith("google/gemini-") }
+            .filter {
+                it.contains("flash", ignoreCase = true) ||
+                        it.contains("lite", ignoreCase = true) ||
+                        it.contains("nano", ignoreCase = true)
+            }
+            .filterNot {
+                it.contains("image", ignoreCase = true) ||
+                        it.contains("vision", ignoreCase = true)
+            }
+            .map {
+                ModelCandidate(
+                    id = it,
+                    version = extractGeminiVersion(it),
+                    isPreview = it.contains("preview", ignoreCase = true) ||
+                            it.contains("experimental", ignoreCase = true)
+                )
+            }
+            .filter { it.version.isNotEmpty() }
+            .toList()
+
+        return candidates
+            .filterNot { it.isPreview }
+            .maxWithOrNull(modelCandidateComparator)
+            ?.id
+            ?: candidates.maxWithOrNull(modelCandidateComparator)?.id
+    }
+
+    private fun extractGeminiVersion(modelId: String): List<Int> {
+        val match = Regex("""google/gemini-(\d+(?:\.\d+)*)""").find(modelId) ?: return emptyList()
+        return match.groupValues[1].split(".").mapNotNull { it.toIntOrNull() }
+    }
+
+    private val modelCandidateComparator = Comparator<ModelCandidate> { left, right ->
+        compareVersions(left.version, right.version)
+    }
+
+    private fun compareVersions(left: List<Int>, right: List<Int>): Int {
+        val size = maxOf(left.size, right.size)
+        for (index in 0 until size) {
+            val comparison = (left.getOrNull(index) ?: 0).compareTo(right.getOrNull(index) ?: 0)
+            if (comparison != 0) return comparison
+        }
+        return 0
+    }
+
+    private data class ModelCandidate(
+        val id: String,
+        val version: List<Int>,
+        val isPreview: Boolean
+    )
 }

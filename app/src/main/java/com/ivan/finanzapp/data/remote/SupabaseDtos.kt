@@ -403,6 +403,28 @@ fun CustomRuleDto.toEntity(): CustomRuleEntity = CustomRuleEntity(
 )
 
 @Serializable
+data class RuleContributionDto(
+    val id: String,
+    val ruleId: String,
+    val name: String,
+    val regexPattern: String,
+    val transactionType: String,
+    val bankSource: String,
+    val amountFormatType: Int,
+    val validatedPackageName: String,
+    val validatedTransactionType: String,
+    val validatedBankSource: String,
+    val classifierSource: String,
+    val transactionIdHash: String,
+    val validatedAtMillis: Long,
+    val createdAt: Long,
+    val reviewStatus: String = "PENDING",
+    val reviewNotes: String? = null,
+    val approvedAtMillis: Long? = null,
+    val contributor_user_id: String? = null
+)
+
+@Serializable
 data class NotificationSyncLedgerDto(
     val id: String,
     val packageName: String,

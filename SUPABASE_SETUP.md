@@ -9,11 +9,13 @@ If this is a brand-new Supabase project with no FinanzApp tables:
 1. Open Supabase Dashboard.
 2. Go to **SQL Editor**.
 3. Paste and run the full contents of `supabase_schema.sql`.
-4. Confirm that these tables exist: `accounts`, `credit_cards`, `categories`, `transactions`, `merchant_category_mappings`, `loans`, `loan_payments`, `deferred_purchases`, `assets`, `custom_rules`, and `notification_sync_ledger`.
+4. Confirm that these tables exist: `accounts`, `credit_cards`, `categories`, `transactions`, `merchant_category_mappings`, `loans`, `loan_payments`, `deferred_purchases`, `assets`, `custom_rules`, `rule_contributions`, and `notification_sync_ledger`.
 
 If you already ran an older FinanzApp schema, run `supabase_migration_from_old_schema.sql` instead. It patches existing tables with the columns needed by the current app.
 
 The script enables Row Level Security so each authenticated user can only manage their own data. Default categories are readable by all authenticated users.
+
+`rule_contributions` is the unified review inbox for custom rules that already processed at least one real notification correctly. App users can only contribute their own validated rules; project admins can review all rows from the Supabase dashboard or SQL editor.
 
 ## 2. Enable Google Auth
 

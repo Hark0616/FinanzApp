@@ -28,6 +28,7 @@ data class SettingsUiState(
     val isSecurityLabMode: Boolean = false,
     val latestLedgerEntry: NotificationSyncLedgerEntity? = null,
     val ledgerReceivedCount: Int = 0,
+    val ledgerQueuedCount: Int = 0,
     val ledgerParsedCount: Int = 0,
     val ledgerDuplicateCount: Int = 0,
     val ledgerFailedCount: Int = 0,
@@ -40,5 +41,5 @@ data class SettingsUiState(
 )
 
 val SettingsUiState.ledgerTotalCount: Int
-    get() = ledgerReceivedCount + ledgerParsedCount + ledgerDuplicateCount +
+    get() = ledgerReceivedCount + ledgerQueuedCount + ledgerParsedCount + ledgerDuplicateCount +
             ledgerFailedCount + ledgerIgnoredCount

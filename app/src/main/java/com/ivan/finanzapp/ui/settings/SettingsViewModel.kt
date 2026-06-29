@@ -83,6 +83,7 @@ class SettingsViewModel @Inject constructor(
         creditCardDao.observeAll(),
         notificationSyncLedgerDao.observeRecent(limit = 1),
         notificationSyncLedgerDao.observeCountByStatus(NotificationProcessingStatus.RECEIVED),
+        notificationSyncLedgerDao.observeCountByStatus(NotificationProcessingStatus.QUEUED),
         notificationSyncLedgerDao.observeCountByStatus(NotificationProcessingStatus.PARSED),
         notificationSyncLedgerDao.observeCountByStatus(NotificationProcessingStatus.DUPLICATE),
         notificationSyncLedgerDao.observeCountByStatus(NotificationProcessingStatus.FAILED),
@@ -112,15 +113,16 @@ class SettingsViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         val latestLedger = (flows[15] as List<NotificationSyncLedgerEntity>).firstOrNull()
         val receivedCount = flows[16] as Int
-        val parsedCount = flows[17] as Int
-        val duplicateCount = flows[18] as Int
-        val failedCount = flows[19] as Int
-        val ignoredCount = flows[20] as Int
-        val recentCount = flows[21] as Int
-        val recentFailedCount = flows[22] as Int
-        val latestParsedLedger = flows[23] as NotificationSyncLedgerEntity?
+        val queuedCount = flows[17] as Int
+        val parsedCount = flows[18] as Int
+        val duplicateCount = flows[19] as Int
+        val failedCount = flows[20] as Int
+        val ignoredCount = flows[21] as Int
+        val recentCount = flows[22] as Int
+        val recentFailedCount = flows[23] as Int
+        val latestParsedLedger = flows[24] as NotificationSyncLedgerEntity?
         @Suppress("UNCHECKED_CAST")
-        val recentAdjustments = flows[24] as List<FinancialAdjustmentEntity>
+        val recentAdjustments = flows[25] as List<FinancialAdjustmentEntity>
 
         SettingsUiState(
             isLoading = false,
@@ -144,6 +146,7 @@ class SettingsViewModel @Inject constructor(
             isSecurityLabMode = BuildConfig.SECURITY_LAB_MODE,
             latestLedgerEntry = latestLedger,
             ledgerReceivedCount = receivedCount,
+            ledgerQueuedCount = queuedCount,
             ledgerParsedCount = parsedCount,
             ledgerDuplicateCount = duplicateCount,
             ledgerFailedCount = failedCount,
@@ -184,6 +187,9 @@ class SettingsViewModel @Inject constructor(
 
     fun setNotificationProcessingMode(mode: String) {
         securePrefs.setNotificationProcessingMode(mode)
+        securePrefs.setLocalAiEnabled(
+            mode == SecurePrefs.MODE_PARSER || mode == SecurePrefs.MODE_LOCAL_AI
+        )
         _processingModeChanged.update { !it }
     }
 

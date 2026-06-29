@@ -6,6 +6,7 @@ import androidx.room.PrimaryKey
 
 enum class NotificationProcessingStatus {
     RECEIVED,
+    QUEUED,
     PARSED,
     DUPLICATE,
     FAILED,
