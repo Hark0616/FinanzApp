@@ -15,14 +15,17 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -45,7 +48,6 @@ import com.ivan.finanzapp.ui.components.OverflowActionMenu
 import com.ivan.finanzapp.ui.components.OverflowMenuAction
 import com.ivan.finanzapp.ui.components.ProgressiveFormSheet
 import com.ivan.finanzapp.ui.components.SectionControlCard
-import com.ivan.finanzapp.ui.components.SectionTitle
 import com.ivan.finanzapp.ui.components.formatEditableAmount
 import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.components.parseMoneyInput
@@ -69,10 +71,13 @@ fun SettingsScreen(
     var accountToEdit by remember { mutableStateOf<AccountEntity?>(null) }
     var securityMessage by remember { mutableStateOf<String?>(null) }
     var isSecurityPromptOpen by remember { mutableStateOf(false) }
+    var selectedSection by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.refreshNotificationPermission()
     }
+
+    val activeSection = selectedSection
 
     Scaffold { innerPadding ->
         LazyColumn(
@@ -84,318 +89,176 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                SettingsHeader()
-            }
-
-            item {
-                SectionTitle("Lectura automática")
-            }
-
-            item {
-                CaptureHealthCard(
-                    state = state,
-                    onOpenPermissionClick = {
-                        context.startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    }
-                )
-            }
-
-            item {
-                AutomationLauncherCard(onClick = { viewModel.toggleProcessingDialog(true) })
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        SectionTitle("Cuentas y tarjetas")
-                        Text(
-                            text = "Cuentas, tarjetas y últimos 4 dígitos para asignar notificaciones.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Button(
-                        onClick = { viewModel.toggleAddAccountDialog(true) },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Agregar", fontSize = 13.sp)
-                    }
+                if (activeSection == null) {
+                    SettingsHeader()
+                } else {
+                    SettingsDetailHeader(
+                        section = activeSection,
+                        onBack = { selectedSection = null }
+                    )
                 }
             }
 
-            if (state.accounts.isEmpty()) {
-                item {
-                    EmptyDataSourcesCard(onAddClick = { viewModel.toggleAddAccountDialog(true) })
+            if (activeSection == null) {
+                items(SettingsSection.values().toList(), key = { it.name }) { section ->
+                    SettingsSectionHubCard(
+                        section = section,
+                        subtitle = settingsSectionSummary(section, state),
+                        onClick = { selectedSection = section }
+                    )
                 }
             } else {
-                items(state.accounts, key = { it.id }) { account ->
-                    val isCredit = account.type == com.ivan.finanzapp.domain.model.AccountType.TARJETA_CREDITO
-                    val displayValue = if (isCredit) {
-                        val debt = state.creditCardsMap[account.id]?.currentDebt ?: 0.0
-                        "Deuda: ${formatCOP(debt)}"
-                    } else {
-                        formatCOP(account.currentBalance)
-                    }
-                    val valueColor = if (isCredit && (state.creditCardsMap[account.id]?.currentDebt ?: 0.0) > 0.0) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
-                    AccountItemRow(
-                        account = account,
-                        displayValue = displayValue,
-                        valueColor = valueColor,
-                        onEditClick = { accountToEdit = account },
-                        onDeleteClick = { accountToDelete = account }
-                    )
-                }
-            }
-
-            if (state.recentFinancialAdjustments.isNotEmpty()) {
-                item {
-                    RecentFinancialAdjustmentsCard(state.recentFinancialAdjustments)
-                }
-            }
-
-            item {
-                SectionTitle("Apariencia")
-            }
-
-            item {
-                AppearanceSettingsCard(
-                    useDynamicColor = state.useDynamicColor,
-                    onUseDynamicColorChange = viewModel::setUseDynamicColor
-                )
-            }
-
-            item {
-                SectionTitle("Seguridad")
-            }
-
-            item {
-                SecuritySettingsCard(
-                    state = state,
-                    securityMessage = securityMessage,
-                    isBusy = isSecurityPromptOpen,
-                    onAppLockToggle = { enabled ->
-                        if (!enabled) {
-                            isSecurityPromptOpen = true
-                            requestLocalSecurityConfirmation(
-                                context = context,
-                                title = "Desactivar seguridad local",
-                                subtitle = "Confirma con tu huella o PIN para desactivar",
-                                cancelMessage = "Confirmación cancelada. El bloqueo local sigue activo.",
-                                onSuccess = {
-                                    isSecurityPromptOpen = false
-                                    securityMessage = "Bloqueo local desactivado."
-                                    viewModel.setAppLockEnabled(false)
-                                },
-                                onError = { message ->
-                                    isSecurityPromptOpen = false
-                                    securityMessage = message
-                                }
-                            )
-                        } else {
-                            isSecurityPromptOpen = true
-                            requestLocalSecurityConfirmation(
-                                context = context,
-                                title = "Activar seguridad local",
-                                subtitle = "Confirma con biometría o PIN del celular",
-                                cancelMessage = "Confirmación cancelada. No se activó el bloqueo local.",
-                                onSuccess = {
-                                    isSecurityPromptOpen = false
-                                    securityMessage = "Bloqueo local activado."
-                                    viewModel.setAppLockEnabled(true)
-                                },
-                                onError = { message ->
-                                    isSecurityPromptOpen = false
-                                    securityMessage = message
+                when (activeSection) {
+                    SettingsSection.AutomaticReading -> {
+                        item {
+                            CaptureHealthCard(
+                                state = state,
+                                onOpenPermissionClick = {
+                                    context.startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                                 }
                             )
                         }
+                        item {
+                            AutomationLauncherCard(onClick = { viewModel.toggleProcessingDialog(true) })
+                        }
                     }
-                )
-            }
 
-            item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            }
-
-            item {
-                SectionTitle("Backup")
-            }
-
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = if (state.currentUserEmail != null) Icons.Default.CloudDone else Icons.Default.CloudOff,
-                                contentDescription = null,
-                                tint = if (state.currentUserEmail != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+                    SettingsSection.Accounts -> {
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
-                                    text = "Backup y sincronización",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = if (state.currentUserEmail != null)
-                                        "Conectado como ${state.currentUserEmail}"
-                                    else "Tus datos siguen locales hasta que conectes una cuenta.",
+                                    text = "Cuentas, tarjetas y últimos 4 dígitos para asignar notificaciones.",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Button(
+                                    onClick = { viewModel.toggleAddAccountDialog(true) },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Agregar", fontSize = 13.sp)
+                                }
+                            }
+                        }
+
+                        if (state.accounts.isEmpty()) {
+                            item {
+                                EmptyDataSourcesCard(onAddClick = { viewModel.toggleAddAccountDialog(true) })
+                            }
+                        } else {
+                            items(state.accounts, key = { it.id }) { account ->
+                                val isCredit = account.type == com.ivan.finanzapp.domain.model.AccountType.TARJETA_CREDITO
+                                val displayValue = if (isCredit) {
+                                    val debt = state.creditCardsMap[account.id]?.currentDebt ?: 0.0
+                                    "Deuda: ${formatCOP(debt)}"
+                                } else {
+                                    formatCOP(account.currentBalance)
+                                }
+                                val valueColor = if (isCredit && (state.creditCardsMap[account.id]?.currentDebt ?: 0.0) > 0.0) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                                AccountItemRow(
+                                    account = account,
+                                    displayValue = displayValue,
+                                    valueColor = valueColor,
+                                    onEditClick = { accountToEdit = account },
+                                    onDeleteClick = { accountToDelete = account }
                                 )
                             }
                         }
 
-                        if (state.currentUserEmail != null) {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                            ) {
-                                Column(Modifier.padding(12.dp)) {
-                                    Text(
-                                        text = if (state.lastCloudSyncAt > 0L)
-                                            "Última copia: ${formatLastSyncTime(state.lastCloudSyncAt)}"
-                                        else "Aún no hay una copia confirmada en la nube.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Text(
-                                        text = "La app también intentará respaldar en segundo plano cuando haya conexión.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
-                                    )
-                                    Text(
-                                        text = "Incluye cuentas, movimientos, tarjetas, créditos, reglas y registro de lectura.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
-                                    )
-                                }
+                        if (state.recentFinancialAdjustments.isNotEmpty()) {
+                            item {
+                                RecentFinancialAdjustmentsCard(state.recentFinancialAdjustments)
                             }
+                        }
+                    }
 
-                            AnimatedVisibility(visible = state.syncStatusMessage != null) {
-                                state.syncStatusMessage?.let { message ->
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.secondaryContainer,
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = message,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier.padding(12.dp)
-                                        )
-                                    }
-                                }
-                            }
+                    SettingsSection.Appearance -> {
+                        item {
+                            AppearanceSettingsCard(
+                                useDynamicColor = state.useDynamicColor,
+                                onUseDynamicColorChange = viewModel::setUseDynamicColor
+                            )
+                        }
+                    }
 
-                            AnimatedVisibility(visible = state.syncErrorMessage != null) {
-                                state.syncErrorMessage?.let { message ->
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.errorContainer,
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = message,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onErrorContainer,
-                                            modifier = Modifier.padding(12.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.End,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Button(
-                                    onClick = { viewModel.syncNow() },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    enabled = !state.isSyncing
-                                ) {
-                                    if (state.isSyncing) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                            strokeWidth = 2.dp
+                    SettingsSection.Security -> {
+                        item {
+                            SecuritySettingsCard(
+                                state = state,
+                                securityMessage = securityMessage,
+                                isBusy = isSecurityPromptOpen,
+                                onAppLockToggle = { enabled ->
+                                    if (!enabled) {
+                                        isSecurityPromptOpen = true
+                                        requestLocalSecurityConfirmation(
+                                            context = context,
+                                            title = "Desactivar seguridad local",
+                                            subtitle = "Confirma con tu huella o PIN para desactivar",
+                                            cancelMessage = "Confirmación cancelada. El bloqueo local sigue activo.",
+                                            onSuccess = {
+                                                isSecurityPromptOpen = false
+                                                securityMessage = "Bloqueo local desactivado."
+                                                viewModel.setAppLockEnabled(false)
+                                            },
+                                            onError = { message ->
+                                                isSecurityPromptOpen = false
+                                                securityMessage = message
+                                            }
                                         )
                                     } else {
-                                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        isSecurityPromptOpen = true
+                                        requestLocalSecurityConfirmation(
+                                            context = context,
+                                            title = "Activar seguridad local",
+                                            subtitle = "Confirma con biometría o PIN del celular",
+                                            cancelMessage = "Confirmación cancelada. No se activó el bloqueo local.",
+                                            onSuccess = {
+                                                isSecurityPromptOpen = false
+                                                securityMessage = "Bloqueo local activado."
+                                                viewModel.setAppLockEnabled(true)
+                                            },
+                                            onError = { message ->
+                                                isSecurityPromptOpen = false
+                                                securityMessage = message
+                                            }
+                                        )
                                     }
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(if (state.isSyncing) "Sincronizando" else "Sincronizar ahora", fontSize = 12.sp)
                                 }
-                                TextButton(
-                                    onClick = { viewModel.signOut() }
-                                ) {
-                                    Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Cerrar Sesión", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        } else {
-                            Button(
-                                onClick = onNavigateToAuth,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Activar backup en la nube", fontWeight = FontWeight.Bold)
-                            }
-                            Text(
-                                text = "El backup incluye cuentas, movimientos, tarjetas, créditos, reglas y registro de lectura.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    SettingsSection.Backup -> {
+                        item {
+                            BackupSettingsCard(
+                                state = state,
+                                onNavigateToAuth = onNavigateToAuth,
+                                onSyncNow = { viewModel.syncNow() },
+                                onSignOut = { viewModel.signOut() }
+                            )
+                        }
+                    }
+
+                    SettingsSection.Advanced -> {
+                        item {
+                            AdvancedSettingsCard(
+                                state = state,
+                                onSaveApiKey = { viewModel.saveApiKey(it) }
                             )
                         }
                     }
                 }
-            }
-
-            item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            }
-
-            item {
-                SectionTitle("Avanzado")
-            }
-
-            item {
-                AdvancedSettingsCard(
-                    state = state,
-                    onSaveApiKey = { viewModel.saveApiKey(it) }
-                )
             }
         }
 
@@ -567,6 +430,290 @@ fun SettingsScreen(
                 onSaveRule = { rule -> viewModel.saveCustomRule(rule) },
                 onDeleteRule = { id -> viewModel.deleteCustomRule(id) }
             )
+        }
+    }
+}
+
+private enum class SettingsSection(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector
+) {
+    AutomaticReading(
+        title = "Lectura automática",
+        subtitle = "Permisos, estado de captura y cómo leer movimientos.",
+        icon = Icons.Default.Notifications
+    ),
+    Accounts(
+        title = "Cuentas y tarjetas",
+        subtitle = "Fuentes de dinero, tarjetas y últimos 4 dígitos.",
+        icon = Icons.Default.AccountBalanceWallet
+    ),
+    Appearance(
+        title = "Apariencia",
+        subtitle = "Paleta visual y colores dinámicos.",
+        icon = Icons.Default.Palette
+    ),
+    Security(
+        title = "Seguridad",
+        subtitle = "Bloqueo local, privacidad y acceso al dispositivo.",
+        icon = Icons.Default.Security
+    ),
+    Backup(
+        title = "Backup",
+        subtitle = "Cuenta, copia en nube y sincronización manual.",
+        icon = Icons.Default.CloudUpload
+    ),
+    Advanced(
+        title = "Avanzado",
+        subtitle = "Claves y opciones técnicas poco frecuentes.",
+        icon = Icons.Default.Settings
+    )
+}
+
+@Composable
+private fun SettingsDetailHeader(
+    section: SettingsSection,
+    onBack: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Volver"
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = section.title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = section.subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionHubCard(
+    section: SettingsSection,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    SectionControlCard(
+        title = section.title,
+        subtitle = subtitle,
+        icon = section.icon,
+        modifier = Modifier.clickable { onClick() },
+        trailing = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "Abrir",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    )
+}
+
+private fun settingsSectionSummary(
+    section: SettingsSection,
+    state: SettingsUiState
+): String {
+    return when (section) {
+        SettingsSection.AutomaticReading -> when {
+            !state.isNotificationListenerEnabled -> "Permiso pendiente para leer notificaciones bancarias."
+            state.ledgerRecentFailedCount > 0 -> "${state.ledgerRecentFailedCount} lecturas con error reciente."
+            state.ledgerQueuedCount > 0 -> "${state.ledgerQueuedCount} pendientes por procesar."
+            state.ledgerTotalCount > 0 -> "${state.ledgerParsedCount} leídas. Captura operativa."
+            else -> "Sin capturas todavía."
+        }
+        SettingsSection.Accounts -> when (state.accounts.size) {
+            0 -> "Sin cuentas configuradas."
+            1 -> "1 cuenta o tarjeta configurada."
+            else -> "${state.accounts.size} cuentas o tarjetas configuradas."
+        }
+        SettingsSection.Appearance -> if (state.useDynamicColor) {
+            "Colores dinámicos activos."
+        } else {
+            "Paleta FinanzApp fija."
+        }
+        SettingsSection.Security -> if (state.isAppLockEnabled) {
+            "Bloqueo local activo."
+        } else {
+            "Bloqueo local desactivado."
+        }
+        SettingsSection.Backup -> state.currentUserEmail?.let {
+            "Conectado como $it."
+        } ?: "Datos locales hasta conectar una cuenta."
+        SettingsSection.Advanced -> "IA en nube y claves opcionales."
+    }
+}
+
+@Composable
+private fun BackupSettingsCard(
+    state: SettingsUiState,
+    onNavigateToAuth: () -> Unit,
+    onSyncNow: () -> Unit,
+    onSignOut: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (state.currentUserEmail != null) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                    contentDescription = null,
+                    tint = if (state.currentUserEmail != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Backup y sincronización",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (state.currentUserEmail != null) {
+                            "Conectado como ${state.currentUserEmail}"
+                        } else {
+                            "Tus datos siguen locales hasta que conectes una cuenta."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (state.currentUserEmail != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            text = if (state.lastCloudSyncAt > 0L) {
+                                "Última copia: ${formatLastSyncTime(state.lastCloudSyncAt)}"
+                            } else {
+                                "Aún no hay una copia confirmada en la nube."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "La app también intentará respaldar en segundo plano cuando haya conexión.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                        )
+                        Text(
+                            text = "Incluye cuentas, movimientos, tarjetas, créditos, reglas y registro de lectura.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                        )
+                    }
+                }
+
+                AnimatedVisibility(visible = state.syncStatusMessage != null) {
+                    state.syncStatusMessage?.let { message ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                }
+
+                AnimatedVisibility(visible = state.syncErrorMessage != null) {
+                    state.syncErrorMessage?.let { message ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onSyncNow,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !state.isSyncing
+                    ) {
+                        if (state.isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (state.isSyncing) "Sincronizando" else "Sincronizar ahora", fontSize = 12.sp)
+                    }
+                    TextButton(onClick = onSignOut) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Cerrar Sesión", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            } else {
+                Button(
+                    onClick = onNavigateToAuth,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Activar backup en la nube", fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    text = "El backup incluye cuentas, movimientos, tarjetas, créditos, reglas y registro de lectura.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

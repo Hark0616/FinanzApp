@@ -352,38 +352,40 @@ fun OverflowActionMenu(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    IconButton(
-        onClick = { expanded = true },
-        modifier = modifier
+    Box(
+        modifier = modifier.size(48.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Default.MoreVert, contentDescription = "Más acciones")
-    }
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = { expanded = false }
-    ) {
-        actions.forEach { action ->
-            val contentColor = if (action.destructive) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            }
-            DropdownMenuItem(
-                text = { Text(action.label, color = contentColor) },
-                leadingIcon = action.icon?.let { icon ->
-                    {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = contentColor
-                        )
-                    }
-                },
-                onClick = {
-                    expanded = false
-                    action.onClick()
+        IconButton(onClick = { expanded = true }) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Más acciones")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            actions.forEach { action ->
+                val contentColor = if (action.destructive) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurface
                 }
-            )
+                DropdownMenuItem(
+                    text = { Text(action.label, color = contentColor) },
+                    leadingIcon = action.icon?.let { icon ->
+                        {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = contentColor
+                            )
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        action.onClick()
+                    }
+                )
+            }
         }
     }
 }
