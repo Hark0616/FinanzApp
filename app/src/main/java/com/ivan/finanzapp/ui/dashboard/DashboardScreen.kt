@@ -249,11 +249,10 @@ private fun HomeFinancialHero(
 ) {
     val isShort = state.disposableCashFlow < 0.0
     val statusText = if (isShort) "Mes por cubrir" else "Con margen"
-    val projectionTitle = if (isShort) "Faltante para compromisos" else "Margen después de compromisos"
     val projectionCopy = if (isShort) {
-        "Si cubres tus compromisos programados, faltan ${formatCOP(abs(state.disposableCashFlow))}."
+        "Faltan ${formatCOP(abs(state.disposableCashFlow))} para cubrir tus compromisos de este mes."
     } else {
-        "Después de compromisos, te queda ${formatCOP(state.disposableCashFlow)}."
+        "Te quedan ${formatCOP(state.disposableCashFlow)} después de compromisos de este mes."
     }
 
     Column(
@@ -300,36 +299,6 @@ private fun HomeFinancialHero(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             lineHeight = 20.sp
         )
-
-        Spacer(Modifier.height(18.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = projectionTitle,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Ingresos ${formatCOP(state.totalIncomesThisMonth)} · Compromisos ${formatCOP(state.totalDebtInstallmentsThisMonth)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
-                )
-            }
-            Text(
-                text = formatCOP(state.disposableCashFlow),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (isShort) TrafficRed else TrafficGreen
-            )
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
 
         Spacer(Modifier.height(18.dp))
         Button(
@@ -549,7 +518,7 @@ private fun HomeSignalsSection(
             add(
                 HomeSignal(
                     title = "Revisar categoría Otros",
-                    subtitle = "Concentra ${formatPercentage(state.dominantSpendingPercentage)} del gasto registrado",
+                    subtitle = "Concentra ${formatPercentage(state.dominantSpendingPercentage)} del gasto del mes",
                     action = "Revisar",
                     color = TrafficYellow,
                     onClick = onSpendingClick
@@ -631,12 +600,12 @@ private fun HomeSummarySection(state: DashboardUiState) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
             HomeSummaryRow(
                 title = "Cuentas",
-                subtitle = "${state.accounts.size} cuentas activas",
+                subtitle = "Disponible ahora",
                 value = formatCOP(state.totalBalance)
             )
             HomeSummaryRow(
                 title = "Saldo en tarjetas",
-                subtitle = "${state.creditCards.size} tarjetas activas",
+                subtitle = "Deuda actual",
                 value = formatCOP(state.totalCreditCardDebt)
             )
             HomeSummaryRow(
@@ -645,8 +614,8 @@ private fun HomeSummarySection(state: DashboardUiState) {
                 value = formatCOP(state.totalLoanRemaining)
             )
             HomeSummaryRow(
-                title = "Gastos registrados",
-                subtitle = state.dominantSpendingCategoryName?.let { "$it domina la lectura" } ?: "Sin gastos este mes",
+                title = "Gastos del mes",
+                subtitle = monthlySpendingSummaryText(state),
                 value = formatCOP(state.monthlySpendingTotal),
                 showDivider = false
             )
@@ -812,6 +781,15 @@ private fun nextPaymentActionText(target: NextPaymentTarget?): String {
         NextPaymentTarget.CREDIT_CARD -> "Ver tarjeta"
         NextPaymentTarget.LOAN -> "Preparar pago"
         null -> "Ver análisis"
+    }
+}
+
+private fun monthlySpendingSummaryText(state: DashboardUiState): String {
+    val categoryName = state.dominantSpendingCategoryName
+    return if (state.monthlySpendingTotal <= 0.0 || categoryName == null) {
+        "Sin gastos este mes"
+    } else {
+        "Este mes · $categoryName ${formatPercentage(state.dominantSpendingPercentage)}"
     }
 }
 
