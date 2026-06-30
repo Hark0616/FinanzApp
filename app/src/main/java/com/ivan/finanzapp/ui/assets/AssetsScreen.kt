@@ -401,7 +401,7 @@ private fun CashFlowTabContent(
         // Historial de Ingresos del Mes
         item {
             Text(
-                "Ingresos de este Mes",
+                "Ingresos aplicados al mes",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(top = 8.dp)

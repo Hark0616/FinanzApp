@@ -11,6 +11,21 @@ class SmsParserTest {
     private val parser = SmsParser()
 
     @Test
+    fun parsesDaviviendaPayrollSmsFromMessagingApp() {
+        val parsed = parser.parse(
+            title = "",
+            text = "DAVIVIENDA Abono Pago de Nomina, \$6,174,962, Cta de Ahorros *5607,Hora 15:54,Lugar Portal pyme BI-KON SAS."
+        )
+
+        assertNotNull(parsed)
+        requireNotNull(parsed)
+        assertEquals(TransactionType.INGRESO, parsed.type)
+        assertEquals(6_174_962.0, parsed.amount, MONEY_DELTA)
+        assertEquals("Nómina - Portal pyme BI-KON SAS", parsed.merchant)
+        assertEquals(BankSource.DAVIVIENDA, parsed.source)
+    }
+
+    @Test
     fun parsesAvVillasCreditCardPurchasesFromSms() {
         val cases = listOf(
             "AVVillas. 19/06/26 20:48 COMPRA CON TU TARJETA CREDITO 5039 POR \$ 408,123 EN ALIEXPRESS COM" to

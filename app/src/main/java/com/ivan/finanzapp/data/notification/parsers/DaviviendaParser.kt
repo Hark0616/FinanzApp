@@ -91,10 +91,15 @@ class DaviviendaParser : BankParser {
             val amount = ParserUtils.parseAmount(match.groupValues[2]) ?: return@let
             val description = ParserUtils.cleanMerchant(match.groupValues[1])
             val place = ParserUtils.cleanMerchant(match.groupValues[4])
+            val isPayroll = description?.contains(Regex("n[oó]mina", RegexOption.IGNORE_CASE)) == true
             return ParsedTransaction(
                 type = TransactionType.INGRESO,
                 amount = amount,
-                merchant = place ?: description ?: "Abono Davivienda",
+                merchant = when {
+                    isPayroll && !place.isNullOrBlank() -> "Nómina - $place"
+                    isPayroll -> "Nómina"
+                    else -> place ?: description ?: "Abono Davivienda"
+                },
                 availableBalance = saldo,
                 source = source,
                 confidence = 0.96

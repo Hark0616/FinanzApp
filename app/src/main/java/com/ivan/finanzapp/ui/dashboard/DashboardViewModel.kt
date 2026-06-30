@@ -15,8 +15,8 @@ import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
 import com.ivan.finanzapp.data.local.entity.DeferredPurchaseEntity
 import com.ivan.finanzapp.data.local.entity.NotificationProcessingStatus
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
+import com.ivan.finanzapp.domain.finance.IncomePeriodResolver
 import com.ivan.finanzapp.domain.model.AccountType
-import com.ivan.finanzapp.domain.model.TransactionType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -148,9 +148,11 @@ class DashboardViewModel @Inject constructor(
         val unclassifiedCount = transactions.count { it.accountId == null }
 
         // Calcular flujo de caja disponible de este mes
-        val totalIncomesThisMonth = transactions
-            .filter { it.type == TransactionType.INGRESO && it.timestamp in monthStart until monthEnd }
-            .sumOf { it.amount }
+        val totalIncomesThisMonth = IncomePeriodResolver.sumEffectiveMonthlyIncome(
+            transactions = transactions,
+            monthDate = LocalDate.now(),
+            zoneId = ZoneId.systemDefault()
+        )
 
         val totalCreditCardInstallments = cards.sumOf { card ->
             val cardPurchases = purchasesByCard[card.id] ?: emptyList()

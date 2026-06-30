@@ -9,6 +9,7 @@ import com.ivan.finanzapp.data.local.entity.AssetType
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
+import com.ivan.finanzapp.domain.finance.IncomePeriodResolver
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.dashboard.TransactionWithCategory
 import com.ivan.finanzapp.ui.widget.WidgetUpdater
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.util.UUID
 import javax.inject.Inject
@@ -80,14 +82,13 @@ class AssetsViewModel @Inject constructor(
 
         // 2. Ingresos de este mes (Filtrados del historial de movimientos)
         val localDate = LocalDate.now()
-        val startOfMonth = localDate.withDayOfMonth(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val endOfMonth = localDate.withDayOfMonth(localDate.lengthOfMonth()).plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
         val categoryMap = categories.associateBy { it.id }
         val accountMap = accounts.associateBy { it.id }
 
+        val currentMonth = YearMonth.from(localDate)
         val monthlyIncomes = transactions
-            .filter { it.type == TransactionType.INGRESO && it.timestamp in startOfMonth until endOfMonth }
+            .filter { IncomePeriodResolver.appliesToMonth(it, currentMonth, ZoneId.systemDefault()) }
             .map { tx ->
                 TransactionWithCategory(
                     transaction = tx,

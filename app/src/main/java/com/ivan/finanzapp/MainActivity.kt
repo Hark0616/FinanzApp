@@ -1,6 +1,9 @@
 package com.ivan.finanzapp
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -38,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -70,6 +74,7 @@ class MainActivity : FragmentActivity() {
     private var isUnlockPromptShowing = false
     private var lastBackgroundAtMillis = 0L
     private var pendingLocalAiDebugIntent: Intent? = null
+    private var hasRequestedPostNotificationsThisSession = false
 
     @Inject
     lateinit var securePrefs: SecurePrefs
@@ -193,6 +198,7 @@ class MainActivity : FragmentActivity() {
             localUnlockError = null
             runPendingLocalAiDebug()
             maybeProcessQueuedNotifications()
+            maybeRequestPostNotifications()
             return
         }
 
@@ -204,6 +210,9 @@ class MainActivity : FragmentActivity() {
         }
         runPendingLocalAiDebug()
         maybeProcessQueuedNotifications()
+        if (isLocalUnlocked) {
+            maybeRequestPostNotifications()
+        }
     }
 
     override fun onPause() {
@@ -232,6 +241,7 @@ class MainActivity : FragmentActivity() {
                 isUnlockPromptShowing = false
                 localUnlockError = null
                 isLocalUnlocked = true
+                maybeRequestPostNotifications()
                 maybeProcessQueuedNotifications()
             },
             onError = { message ->
@@ -279,10 +289,23 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    private fun maybeRequestPostNotifications() {
+        if (hasRequestedPostNotificationsThisSession) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        hasRequestedPostNotificationsThisSession = true
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), POST_NOTIFICATIONS_REQUEST_CODE)
+    }
+
     private companion object {
         private const val LOCAL_LOCK_TIMEOUT_MILLIS = 60_000L
         private const val ACTION_DEBUG_LOCAL_AI = "com.ivan.finanzapp.DEBUG_LOCAL_AI"
         private const val EXTRA_DEBUG_LOCAL_AI = "debug_local_ai"
+        private const val POST_NOTIFICATIONS_REQUEST_CODE = 4201
     }
 }
 

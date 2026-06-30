@@ -14,6 +14,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import com.ivan.finanzapp.domain.finance.IncomePeriodResolver
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.components.formatCOP
 import dagger.hilt.android.EntryPointAccessors
@@ -29,26 +30,32 @@ class AutonomiaWidget : GlanceAppWidget() {
         val transactionDao = entryPoint.transactionDao()
 
         val today = LocalDate.now()
-        val monthStart = LocalDate.of(today.year, today.month, 1)
-            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val monthEnd = LocalDate.now().plusMonths(1).withDayOfMonth(1)
-            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val zoneId = ZoneId.systemDefault()
+        val monthStartDate = LocalDate.of(today.year, today.month, 1)
+        val monthStart = monthStartDate.atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val monthEnd = today.plusMonths(1).withDayOfMonth(1)
+            .atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val incomeLookupStart = monthStartDate.minusMonths(1)
+            .atStartOfDay(zoneId).toInstant().toEpochMilli()
 
         // Calcular presupuesto total
         val categories = categoryDao.getAllSnapshot()
         var totalBudget = categories.sumOf { it.budgetLimit ?: 0.0 }
 
         // Calcular gastos
-        val transactions = transactionDao.getByDateRangeSnapshot(monthStart, monthEnd)
+        val transactions = transactionDao.getByDateRangeSnapshot(incomeLookupStart, monthEnd)
         val monthlySpent = transactions.filter {
-            it.type == TransactionType.GASTO || it.type == TransactionType.GASTO_TC
+            it.timestamp in monthStart until monthEnd &&
+                    (it.type == TransactionType.GASTO || it.type == TransactionType.GASTO_TC)
         }.sumOf { it.amount }
 
         // Si no hay presupuesto establecido en categorías, usamos el ingreso como presupuesto estimado
         if (totalBudget <= 0.0) {
-            totalBudget = transactions.filter {
-                it.type == TransactionType.INGRESO
-            }.sumOf { it.amount }
+            totalBudget = IncomePeriodResolver.sumEffectiveMonthlyIncome(
+                transactions = transactions,
+                monthDate = today,
+                zoneId = zoneId
+            )
         }
 
         val hasMonthlyBase = totalBudget > 0.0

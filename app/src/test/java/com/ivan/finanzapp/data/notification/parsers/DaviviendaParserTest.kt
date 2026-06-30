@@ -14,7 +14,7 @@ class DaviviendaParserTest {
     fun parsesDaviviendaSavingsAccountCredits() {
         val cases = listOf(
             "DAVIVIENDA Abono Pago de Nomina, \$3,801,011, Cta de Ahorros *5607,Hora 16:18,Lugar Portal pyme BI-KON SAS." to
-                    ExpectedTransaction(TransactionType.INGRESO, 3_801_011.0, "Portal pyme BI-KON SAS"),
+                    ExpectedTransaction(TransactionType.INGRESO, 3_801_011.0, "Nómina - Portal pyme BI-KON SAS"),
             "DAVIVIENDA Abono Transferencia de Daviplata a Cuenta, \$1,184,964, Cta de Ahorros *5607,Hora 16:35,Lugar DAVIPLATA." to
                     ExpectedTransaction(TransactionType.INGRESO, 1_184_964.0, "DAVIPLATA"),
             "DAVIVIENDA Abono Transferencia a su llave \$73,000, Cta de Ahorros *5607,Hora 21:12,Lugar Llaves Bre-B." to
@@ -71,6 +71,7 @@ class DaviviendaParserTest {
         requireNotNull(parsed)
         assertEquals(TransactionType.INGRESO, parsed.type)
         assertEquals(3_801_011.0, parsed.amount, MONEY_DELTA)
+        assertEquals("Nómina - Portal pyme BI-KON SAS", parsed.merchant)
     }
 
     private fun assertParsed(message: String, expected: ExpectedTransaction) {
