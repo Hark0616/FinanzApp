@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -50,8 +52,15 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import com.ivan.finanzapp.ui.components.SectionTitle
+import com.ivan.finanzapp.ui.components.ActionSheet
+import com.ivan.finanzapp.ui.components.MoneyInputField
+import com.ivan.finanzapp.ui.components.ProgressiveFormSheet
+import com.ivan.finanzapp.ui.components.QuickSelectOption
+import com.ivan.finanzapp.ui.components.QuickSelectSheet
+import com.ivan.finanzapp.ui.components.formatEditableAmount
 import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.components.formatPercentage
+import com.ivan.finanzapp.ui.components.parseMoneyInput
 import com.ivan.finanzapp.ui.dashboard.CreditCardSummary
 import com.ivan.finanzapp.ui.theme.TrafficGreen
 import com.ivan.finanzapp.ui.theme.TrafficRed
@@ -148,9 +157,8 @@ fun CreditCardsScreen(
             }
         }
 
-        // Diálogo para Registrar Abono
         selectedForPayment?.let { summary ->
-            PayCardDialog(
+            PayCardSheet(
                 summary = summary,
                 accounts = state.accounts,
                 onDismiss = { selectedForPayment = null },
@@ -161,9 +169,8 @@ fun CreditCardsScreen(
             )
         }
 
-        // Diálogo para Agregar Compra
         selectedForDeferredPurchase?.let { summary ->
-            AddDeferredPurchaseDialog(
+            DeferredPurchaseSheet(
                 cardSummary = summary,
                 onDismiss = { selectedForDeferredPurchase = null },
                 onConfirm = { desc, amount, totalInst, paidInst, dateLong, interest ->
@@ -173,9 +180,8 @@ fun CreditCardsScreen(
             )
         }
 
-        // Diálogo para Editar Compra
         editingDeferredPurchase?.let { (summary, purchase) ->
-            EditDeferredPurchaseDialog(
+            DeferredPurchaseSheet(
                 purchase = purchase,
                 cardSummary = summary,
                 onDismiss = { editingDeferredPurchase = null },
@@ -203,14 +209,6 @@ private fun PhysicalLikeCreditCard(
     summary: CreditCardSummary,
     onCardClick: () -> Unit
 ) {
-    val calculator = remember { CreditCardCalculator() }
-
-    val gradientColors = when (summary.usageLevel) {
-        "LOW" -> listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))
-        "MEDIUM" -> listOf(Color(0xFF373B44), Color(0xFF4286f4))
-        else -> listOf(Color(0xFF8A2387), Color(0xFFE94057), Color(0xFFF27121))
-    }
-
     val barColor = when (summary.usageLevel) {
         "LOW" -> TrafficGreen
         "MEDIUM" -> TrafficYellow
@@ -221,144 +219,68 @@ private fun PhysicalLikeCreditCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onCardClick() },
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(6.dp)
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Column(
-            modifier = Modifier
-                .background(Brush.linearGradient(colors = gradientColors))
-                .padding(20.dp)
-        ) {
-            // Fila de arriba: Nombre de banco y chip físico ficticio
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
-                Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    summary.account.name,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
-                Icon(
-                    Icons.Default.CreditCard,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // Número ficticio
-            Text(
-                "••••  ••••  ••••  ${summary.account.lastFourDigits ?: summary.card.id.takeLast(4).ifBlank { "8888" }}",
-                color = Color.White.copy(alpha = 0.85f),
-                fontSize = 20.sp,
-                letterSpacing = 2.sp,
-                fontWeight = FontWeight.Medium
-            )
-
-            Spacer(Modifier.height(20.dp))
-
-            // Información de saldos
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column {
-                    Text(
-                        "DEUDA ACTUAL",
-                        color = Color.White.copy(alpha = 0.65f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        formatCOP(summary.card.currentDebt),
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    ) {
+                        Icon(
+                            Icons.Default.CreditCard,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(8.dp).size(22.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = summary.account.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "Vence ${cardDueText(summary.daysUntilDue)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        "CUPO DISPONIBLE",
-                        color = Color.White.copy(alpha = 0.65f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        formatCOP(summary.availableCredit),
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Spacer(Modifier.height(16.dp))
-
-            // Progreso del cupo
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    "Uso: ${formatPercentage(summary.usagePercentage)}",
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 12.sp
-                )
-                Text(
-                    "Cupo Total: ${formatCOP(summary.card.creditLimit)}",
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 12.sp
-                )
-            }
-            Spacer(Modifier.height(4.dp))
             LinearProgressIndicator(
                 progress = { (summary.usagePercentage / 100).toFloat().coerceIn(0f, 1f) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp),
                 color = barColor,
-                trackColor = Color.White.copy(alpha = 0.2f)
+                trackColor = barColor.copy(alpha = 0.16f)
             )
 
-            Spacer(Modifier.height(16.dp))
-
-            // Fechas y Pago mínimo
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                    .padding(10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
-                    Text("Pago mínimo", color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
-                    Text(formatCOP(summary.minimumPayment), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Corte", color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
-                    Text("Día ${summary.card.cutoffDay}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Deuda", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(formatCOP(summary.card.currentDebt), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = TrafficRed)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("Vence en", color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
-                    val daysText = when {
-                        summary.daysUntilDue == 0 -> "¡Hoy!"
-                        summary.daysUntilDue < 0 -> "Vencida"
-                        else -> "${summary.daysUntilDue} días"
-                    }
-                    Text(daysText, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Disponible", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(formatCOP(summary.availableCredit), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = TrafficGreen)
                 }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                Text(
-                    text = "Toca para ver detalle →",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("Pago mín.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(formatCOP(summary.minimumPayment), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -717,105 +639,258 @@ private fun CreditCardDetailView(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PayCardDialog(
+private fun PayCardSheet(
     summary: CreditCardSummary,
     accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
     onConfirm: (amount: Double, fundingAccountId: String?) -> Unit
 ) {
     var amount by remember { mutableStateOf("") }
-    var selectedAccount by remember { mutableStateOf<AccountEntity?>(null) }
-    var dropdownExpanded by remember { mutableStateOf(false) }
+    var selectedAccountId by remember { mutableStateOf<String?>(null) }
+    var accountSheetOpen by remember { mutableStateOf(false) }
+    val amountVal = parseMoneyInput(amount)
+    val selectedAccount = accounts.firstOrNull { it.id == selectedAccountId }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Registrar Abono a Tarjeta") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+    ActionSheet(
+        title = "Registrar pago",
+        subtitle = "${summary.account.name} · deuda ${formatCOP(summary.card.currentDebt)}",
+        onDismiss = onDismiss
+    ) {
+        MoneyInputField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "Monto",
+            isError = amount.isNotBlank() && amountVal == null,
+            supportingText = if (amount.isNotBlank() && amountVal == null) "Monto inválido" else null
+        )
+        OutlinedButton(
+            onClick = { accountSheetOpen = true },
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+        ) {
+            Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                Text("Cuenta de fondos", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    "Vas a registrar un pago para la tarjeta \"${summary.account.name}\". " +
-                            "La deuda actual es ${formatCOP(summary.card.currentDebt)}.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = { Text("Monto del Abono ($)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                Spacer(Modifier.height(4.dp))
-
-                Text(
-                    "Cuenta de fondos para debitar (Opcional)",
+                    selectedAccount?.name ?: "Pago externo",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray
+                    fontWeight = FontWeight.SemiBold
                 )
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = selectedAccount?.name ?: "Ninguna cuenta (Abono manual externo)",
-                        onValueChange = {},
-                        readOnly = true,
-                        trailingIcon = {
-                            IconButton(onClick = { dropdownExpanded = true }) {
-                                Icon(Icons.Default.ArrowDropDown, null)
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { dropdownExpanded = true }
-                    )
+            }
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+        }
+        SheetActions(
+            primaryLabel = "Confirmar",
+            canSubmit = amountVal != null && amountVal > 0.0,
+            onDismiss = onDismiss,
+            onSubmit = { amountVal?.let { onConfirm(it, selectedAccountId) } }
+        )
+    }
 
-                    DropdownMenu(
-                        expanded = dropdownExpanded,
-                        onDismissRequest = { dropdownExpanded = false },
-                        modifier = Modifier.fillMaxWidth(0.9f)
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Ninguna cuenta") },
-                            onClick = {
-                                selectedAccount = null
-                                dropdownExpanded = false
-                            }
-                        )
-                        accounts.forEach { account ->
-                            DropdownMenuItem(
-                                text = { Text("${account.name} (Saldo: ${formatCOP(account.currentBalance)})") },
-                                onClick = {
-                                    selectedAccount = account
-                                    dropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
+    if (accountSheetOpen) {
+        QuickSelectSheet(
+            title = "Cuenta de fondos",
+            options = listOf(
+                QuickSelectOption<String?>(
+                    value = null,
+                    title = "Pago externo",
+                    subtitle = "No descuenta una cuenta",
+                    icon = Icons.Default.Clear
+                )
+            ) + accounts.map { account ->
+                QuickSelectOption<String?>(
+                    value = account.id,
+                    title = account.name,
+                    subtitle = "Saldo ${formatCOP(account.currentBalance)}",
+                    icon = Icons.Default.AccountBalanceWallet
+                )
+            },
+            selectedValue = selectedAccountId,
+            onDismiss = { accountSheetOpen = false },
+            onSelect = { selectedAccountId = it }
+        )
+    }
+}
+
+@Composable
+private fun DeferredPurchaseSheet(
+    cardSummary: CreditCardSummary,
+    onDismiss: () -> Unit,
+    onConfirm: (description: String, totalAmount: Double, totalInstallments: Int, paidInstallments: Int, purchaseDate: Long, interestRateEA: Double?) -> Unit,
+    purchase: DeferredPurchaseEntity? = null
+) {
+    var description by remember(purchase?.id) { mutableStateOf(purchase?.description.orEmpty()) }
+    var totalAmount by remember(purchase?.id) { mutableStateOf(purchase?.totalAmount?.let(::formatEditableAmount).orEmpty()) }
+    var totalInstallments by remember(purchase?.id) { mutableStateOf(purchase?.totalInstallments?.toString().orEmpty()) }
+    var paidInstallments by remember(purchase?.id) { mutableStateOf(purchase?.paidInstallments?.toString() ?: "0") }
+    var purchaseDate by remember(purchase?.id) { mutableStateOf(purchase?.purchaseDate ?: System.currentTimeMillis()) }
+    var interestRateEA by remember(purchase?.id) { mutableStateOf(purchase?.interestRateEA?.let(::formatEditableAmount).orEmpty()) }
+    var allowOverdraft by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
+    val amountVal = parseMoneyInput(totalAmount) ?: 0.0
+    val totalInstVal = totalInstallments.toIntOrNull() ?: 0
+    val paidInstVal = paidInstallments.toIntOrNull() ?: 0
+    val interestVal = interestRateEA.trim().replace(",", ".").toDoubleOrNull()
+    val isInterestValid = interestRateEA.isBlank() || interestVal != null
+    val calculator = remember { CreditCardCalculator() }
+    val oldRemainingDebt = purchase?.let { calculator.remainingDebt(it) } ?: 0.0
+    val remainingInstVal = (totalInstVal - paidInstVal).coerceAtLeast(0)
+    val newInstallment = if (totalInstVal > 0) amountVal / totalInstVal else 0.0
+    val newRemainingDebt = newInstallment * remainingInstVal
+    val isOverdraft = newRemainingDebt > cardSummary.availableCredit + oldRemainingDebt
+
+    fun autoComputePaid(dateLong: Long, totalInstStr: String) {
+        val totalInst = totalInstStr.toIntOrNull() ?: return
+        val today = LocalDate.now()
+        val pDate = Instant.ofEpochMilli(dateLong)
+            .atZone(ZoneId.systemDefault())
+            .toLocalDate()
+        val calculatedBilled = calculator.billedInstallments(
+            pDate,
+            cardSummary.card.cutoffDay,
+            today,
+            totalInst
+        )
+        paidInstallments = calculatedBilled.toString()
+    }
+
+    val datePickerDialog = remember(purchaseDate, totalInstallments) {
+        val cal = Calendar.getInstance().apply { timeInMillis = purchaseDate }
+        DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                val newCal = Calendar.getInstance()
+                newCal.set(Calendar.YEAR, year)
+                newCal.set(Calendar.MONTH, month)
+                newCal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                purchaseDate = newCal.timeInMillis
+                autoComputePaid(newCal.timeInMillis, totalInstallments)
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH)
+        )
+    }
+
+    ProgressiveFormSheet(
+        title = if (purchase == null) "Compra diferida" else "Editar compra",
+        subtitle = cardSummary.account.name,
+        onDismiss = onDismiss,
+        primaryActionLabel = if (purchase == null) "Guardar" else "Actualizar",
+        canSubmit = description.isNotBlank() &&
+                amountVal > 0.0 &&
+                totalInstVal > 0 &&
+                paidInstVal >= 0 &&
+                paidInstVal <= totalInstVal &&
+                isInterestValid &&
+                (!isOverdraft || allowOverdraft),
+        onSubmit = {
+            onConfirm(description.trim(), amountVal, totalInstVal, paidInstVal, purchaseDate, interestVal)
         },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val amt = amount.toDoubleOrNull() ?: 0.0
-                    if (amt > 0.0) {
-                        onConfirm(amt, selectedAccount?.id)
-                    }
-                },
-                enabled = amount.toDoubleOrNull() != null && (amount.toDoubleOrNull() ?: 0.0) > 0.0
+        advancedLabel = "Avanzado",
+        advancedContent = {
+            OutlinedTextField(
+                value = paidInstallments,
+                onValueChange = { paidInstallments = it.filter(Char::isDigit) },
+                label = { Text("Cuotas pagadas") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                shape = MaterialTheme.shapes.small
+            )
+            OutlinedButton(
+                onClick = { datePickerDialog.show() },
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
             ) {
-                Text("Confirmar Pago")
+                Icon(Icons.Default.Event, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(dateFormat.format(Date(purchaseDate)), modifier = Modifier.weight(1f))
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
+            OutlinedTextField(
+                value = interestRateEA,
+                onValueChange = { interestRateEA = it.filter { char -> char.isDigit() || char == '.' || char == ',' } },
+                label = { Text("Tasa EA") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                shape = MaterialTheme.shapes.small
+            )
+        }
+    ) {
+        OutlinedTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = { Text("Descripción") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = MaterialTheme.shapes.small
+        )
+        MoneyInputField(
+            value = totalAmount,
+            onValueChange = { totalAmount = it },
+            label = "Monto"
+        )
+        OutlinedTextField(
+            value = totalInstallments,
+            onValueChange = {
+                totalInstallments = it.filter(Char::isDigit)
+                autoComputePaid(purchaseDate, totalInstallments)
+            },
+            label = { Text("Cuotas") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            shape = MaterialTheme.shapes.small
+        )
+        if (isOverdraft) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = allowOverdraft, onCheckedChange = { allowOverdraft = it })
+                Text(
+                    text = "Sobregira el cupo disponible (${formatCOP(cardSummary.availableCredit + oldRemainingDebt)})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
         }
-    )
+    }
+}
+
+@Composable
+private fun SheetActions(
+    primaryLabel: String,
+    canSubmit: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+            Text("Cancelar")
+        }
+        Button(
+            onClick = onSubmit,
+            enabled = canSubmit,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(primaryLabel)
+        }
+    }
+}
+
+private fun cardDueText(days: Int): String {
+    return when {
+        days < 0 -> "vencida"
+        days == 0 -> "hoy"
+        days == 1 -> "mañana"
+        else -> "en $days días"
+    }
 }
 
 @Composable
@@ -847,190 +922,6 @@ private fun EmptyCardsCard() {
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AddDeferredPurchaseDialog(
-    cardSummary: CreditCardSummary,
-    onDismiss: () -> Unit,
-    onConfirm: (description: String, totalAmount: Double, totalInstallments: Int, paidInstallments: Int, purchaseDate: Long, interestRateEA: Double?) -> Unit
-) {
-    var description by remember { mutableStateOf("") }
-    var totalAmount by remember { mutableStateOf("") }
-    var totalInstallments by remember { mutableStateOf("") }
-    var paidInstallments by remember { mutableStateOf("0") }
-    var purchaseDate by remember { mutableStateOf(System.currentTimeMillis()) }
-    var interestRateEA by remember { mutableStateOf("") }
-    var allowOverdraft by remember { mutableStateOf(false) }
-
-    val context = LocalContext.current
-    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
-
-    fun autoComputePaid(dateLong: Long, totalInstStr: String) {
-        val totalInst = totalInstStr.toIntOrNull() ?: return
-        val today = LocalDate.now()
-        val pDate = Instant.ofEpochMilli(dateLong)
-            .atZone(ZoneId.systemDefault())
-            .toLocalDate()
-        val calculator = CreditCardCalculator()
-        val calculatedBilled = calculator.billedInstallments(
-            pDate,
-            cardSummary.card.cutoffDay,
-            today,
-            totalInst
-        )
-        paidInstallments = calculatedBilled.toString()
-    }
-
-    val amountVal = totalAmount.toDoubleOrNull() ?: 0.0
-    val isOverdraft = amountVal > cardSummary.availableCredit
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Agregar Compra") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(
-                    "Agrega una compra a cuotas activa en la tarjeta \"${cardSummary.account.name}\". " +
-                            "La deuda de esta compra se sumará a la deuda total de la tarjeta.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Descripción") },
-                    placeholder = { Text("Ej. Televisor, Ropa Zara, etc.") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = totalAmount,
-                    onValueChange = { totalAmount = it },
-                    label = { Text("Monto Total ($)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                OutlinedTextField(
-                    value = totalInstallments,
-                    onValueChange = { newValue ->
-                        totalInstallments = newValue
-                        autoComputePaid(purchaseDate, newValue)
-                    },
-                    label = { Text("Cuotas Totales") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                OutlinedTextField(
-                    value = paidInstallments,
-                    onValueChange = { paidInstallments = it },
-                    label = { Text("Cuotas Pagadas") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                OutlinedTextField(
-                    value = interestRateEA,
-                    onValueChange = { interestRateEA = it },
-                    label = { Text("Tasa de Interés E.A. % (Opcional)") },
-                    placeholder = { Text("Ej. 28.5") },
-                    supportingText = { Text("Si queda vacío, usa la tasa de la tarjeta.") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                // Campo interactivo para la fecha de compra
-                val cal = Calendar.getInstance().apply { timeInMillis = purchaseDate }
-                val datePickerDialog = DatePickerDialog(
-                    context,
-                    { _, year, month, dayOfMonth ->
-                        val newCal = Calendar.getInstance()
-                        newCal.set(Calendar.YEAR, year)
-                        newCal.set(Calendar.MONTH, month)
-                        newCal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
-                        purchaseDate = newCal.timeInMillis
-                        autoComputePaid(newCal.timeInMillis, totalInstallments)
-                    },
-                    cal.get(Calendar.YEAR),
-                    cal.get(Calendar.MONTH),
-                    cal.get(Calendar.DAY_OF_MONTH)
-                )
-
-                OutlinedTextField(
-                    value = dateFormat.format(Date(purchaseDate)),
-                    onValueChange = {},
-                    label = { Text("Fecha de Compra") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { datePickerDialog.show() },
-                    enabled = false, // Deshabilitar entrada de texto para forzar el click en el DatePicker
-                    colors = OutlinedTextFieldDefaults.colors(
-                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                        disabledBorderColor = MaterialTheme.colorScheme.outline,
-                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-
-                if (isOverdraft) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = allowOverdraft,
-                            onCheckedChange = { allowOverdraft = it }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "Acepto registrar esta compra sobregirando la tarjeta (Cupo disponible: ${formatCOP(cardSummary.availableCredit)})",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            val totalInstVal = totalInstallments.toIntOrNull() ?: 0
-            val paidInstVal = paidInstallments.toIntOrNull() ?: 0
-            val interestVal = interestRateEA.trim().toDoubleOrNull()
-            val isInterestValid = interestRateEA.isBlank() || interestVal != null
-            val isValid = description.isNotBlank() &&
-                    amountVal > 0.0 &&
-                    totalInstVal > 0 &&
-                    paidInstVal >= 0 &&
-                    paidInstVal <= totalInstVal &&
-                    isInterestValid &&
-                    (!isOverdraft || allowOverdraft)
-
-            Button(
-                onClick = {
-                    onConfirm(description, amountVal, totalInstVal, paidInstVal, purchaseDate, interestVal)
-                },
-                enabled = isValid
-            ) {
-                Text("Guardar Compra")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
-        }
-    )
 }
 
 @Composable
@@ -1263,192 +1154,4 @@ private fun DeferredPurchaseItem(
             }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun EditDeferredPurchaseDialog(
-    purchase: DeferredPurchaseEntity,
-    cardSummary: CreditCardSummary,
-    onDismiss: () -> Unit,
-    onConfirm: (description: String, totalAmount: Double, totalInstallments: Int, paidInstallments: Int, purchaseDate: Long, interestRateEA: Double?) -> Unit
-) {
-    var description by remember { mutableStateOf(purchase.description) }
-    var totalAmount by remember { mutableStateOf(purchase.totalAmount.toString()) }
-    var totalInstallments by remember { mutableStateOf(purchase.totalInstallments.toString()) }
-    var paidInstallments by remember { mutableStateOf(purchase.paidInstallments.toString()) }
-    var purchaseDate by remember { mutableStateOf(purchase.purchaseDate) }
-    var interestRateEA by remember { mutableStateOf(purchase.interestRateEA?.toString() ?: "") }
-    var allowOverdraft by remember { mutableStateOf(false) }
-
-    val context = LocalContext.current
-    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
-
-    fun autoComputePaid(dateLong: Long, totalInstStr: String) {
-        val totalInst = totalInstStr.toIntOrNull() ?: return
-        val today = LocalDate.now()
-        val pDate = Instant.ofEpochMilli(dateLong)
-            .atZone(ZoneId.systemDefault())
-            .toLocalDate()
-        val calculator = CreditCardCalculator()
-        val calculatedBilled = calculator.billedInstallments(
-            pDate,
-            cardSummary.card.cutoffDay,
-            today,
-            totalInst
-        )
-        paidInstallments = calculatedBilled.toString()
-    }
-
-    val amountVal = totalAmount.toDoubleOrNull() ?: 0.0
-    val totalInstVal = totalInstallments.toIntOrNull() ?: 0
-    val paidInstVal = paidInstallments.toIntOrNull() ?: 0
-    val calculator = remember { CreditCardCalculator() }
-    val oldRemainingDebt = calculator.remainingDebt(purchase)
-    val remainingInstVal = (totalInstVal - paidInstVal).coerceAtLeast(0)
-    val newInstVal = if (totalInstVal > 0) amountVal / totalInstVal else 0.0
-    val newRemainingDebt = newInstVal * remainingInstVal
-    val isOverdraft = newRemainingDebt > cardSummary.availableCredit + oldRemainingDebt
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Editar Compra") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(
-                    "Modifica los detalles de la compra \"${purchase.description}\".",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Descripción") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = totalAmount,
-                    onValueChange = { totalAmount = it },
-                    label = { Text("Monto Total ($)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                OutlinedTextField(
-                    value = totalInstallments,
-                    onValueChange = { newValue ->
-                        totalInstallments = newValue
-                        autoComputePaid(purchaseDate, newValue)
-                    },
-                    label = { Text("Cuotas Totales") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                OutlinedTextField(
-                    value = paidInstallments,
-                    onValueChange = { paidInstallments = it },
-                    label = { Text("Cuotas Pagadas") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                OutlinedTextField(
-                    value = interestRateEA,
-                    onValueChange = { interestRateEA = it },
-                    label = { Text("Tasa de Interés E.A. % (Opcional)") },
-                    placeholder = { Text("Ej. 28.5") },
-                    supportingText = { Text("Si queda vacío, usa la tasa de la tarjeta.") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                // Campo interactivo para la fecha de compra
-                val cal = Calendar.getInstance().apply { timeInMillis = purchaseDate }
-                val datePickerDialog = DatePickerDialog(
-                    context,
-                    { _, year, month, dayOfMonth ->
-                        val newCal = Calendar.getInstance()
-                        newCal.set(Calendar.YEAR, year)
-                        newCal.set(Calendar.MONTH, month)
-                        newCal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
-                        purchaseDate = newCal.timeInMillis
-                        autoComputePaid(newCal.timeInMillis, totalInstallments)
-                    },
-                    cal.get(Calendar.YEAR),
-                    cal.get(Calendar.MONTH),
-                    cal.get(Calendar.DAY_OF_MONTH)
-                )
-
-                OutlinedTextField(
-                    value = dateFormat.format(Date(purchaseDate)),
-                    onValueChange = {},
-                    label = { Text("Fecha de Compra") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { datePickerDialog.show() },
-                    enabled = false,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                        disabledBorderColor = MaterialTheme.colorScheme.outline,
-                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-
-                if (isOverdraft) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = allowOverdraft,
-                            onCheckedChange = { allowOverdraft = it }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "Acepto registrar esta compra sobregirando la tarjeta (Cupo disponible para esta compra: ${formatCOP(cardSummary.availableCredit + oldRemainingDebt)})",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            val interestVal = interestRateEA.trim().toDoubleOrNull()
-            val isInterestValid = interestRateEA.isBlank() || interestVal != null
-            val isValid = description.isNotBlank() &&
-                    amountVal > 0.0 &&
-                    totalInstVal > 0 &&
-                    paidInstVal >= 0 &&
-                    paidInstVal <= totalInstVal &&
-                    isInterestValid &&
-                    (!isOverdraft || allowOverdraft)
-
-            Button(
-                onClick = {
-                    onConfirm(description, amountVal, totalInstVal, paidInstVal, purchaseDate, interestVal)
-                },
-                enabled = isValid
-            ) {
-                Text("Guardar Cambios")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
-        }
-    )
 }
