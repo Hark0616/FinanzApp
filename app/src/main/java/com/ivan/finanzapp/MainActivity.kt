@@ -45,6 +45,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.fragment.app.FragmentActivity
 import com.ivan.finanzapp.data.local.SecurePrefs
+import com.ivan.finanzapp.data.local.AppearancePrefs
 import com.ivan.finanzapp.data.local.dao.NotificationSyncLedgerDao
 import com.ivan.finanzapp.data.local.entity.NotificationProcessingStatus
 import com.ivan.finanzapp.data.notification.TransactionProcessor
@@ -74,6 +75,9 @@ class MainActivity : FragmentActivity() {
     lateinit var securePrefs: SecurePrefs
 
     @Inject
+    lateinit var appearancePrefs: AppearancePrefs
+
+    @Inject
     lateinit var localAiClassifier: LocalAiClassifier
 
     @Inject
@@ -89,7 +93,8 @@ class MainActivity : FragmentActivity() {
         isLocalUnlocked = !securePrefs.isAppLockEnabled()
 
         setContent {
-            FinanzAppTheme {
+            val useDynamicColor by appearancePrefs.useDynamicColor.collectAsState(initial = false)
+            FinanzAppTheme(dynamicColor = useDynamicColor) {
                 val navController = rememberNavController()
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentDestination = navBackStackEntry?.destination

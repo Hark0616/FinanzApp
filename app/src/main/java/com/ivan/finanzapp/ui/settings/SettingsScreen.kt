@@ -2,6 +2,7 @@ package com.ivan.finanzapp.ui.settings
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings as AndroidSettings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -82,6 +83,13 @@ fun SettingsScreen(
                     onOpenPermissionClick = {
                         context.startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     }
+                )
+            }
+
+            item {
+                AppearanceSettingsCard(
+                    useDynamicColor = state.useDynamicColor,
+                    onUseDynamicColorChange = viewModel::setUseDynamicColor
                 )
             }
 
@@ -939,6 +947,65 @@ private fun adjustmentTargetLabel(targetType: FinancialAdjustmentTargetType): St
         FinancialAdjustmentTargetType.ACCOUNT_BALANCE -> "Saldo"
         FinancialAdjustmentTargetType.CREDIT_CARD_LIMIT -> "Cupo"
         FinancialAdjustmentTargetType.CREDIT_CARD_DEBT -> "Deuda"
+    }
+}
+
+@Composable
+private fun AppearanceSettingsCard(
+    useDynamicColor: Boolean,
+    onUseDynamicColorChange: (Boolean) -> Unit
+) {
+    val dynamicColorAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = CardDefaults.outlinedCardBorder()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Palette,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .size(22.dp)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Apariencia",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = if (dynamicColorAvailable) {
+                        "Colores dinámicos del sistema, apagados por defecto."
+                    } else {
+                        "Los colores dinámicos requieren Android 12 o superior."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = dynamicColorAvailable && useDynamicColor,
+                onCheckedChange = onUseDynamicColorChange,
+                enabled = dynamicColorAvailable
+            )
+        }
     }
 }
 

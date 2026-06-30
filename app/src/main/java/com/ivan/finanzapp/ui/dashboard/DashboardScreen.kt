@@ -3,6 +3,11 @@ package com.ivan.finanzapp.ui.dashboard
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -32,6 +37,7 @@ import com.ivan.finanzapp.ui.components.*
 import com.ivan.finanzapp.ui.theme.TrafficGreen
 import com.ivan.finanzapp.ui.theme.TrafficRed
 import com.ivan.finanzapp.ui.theme.TrafficYellow
+import com.ivan.finanzapp.ui.theme.FinanzMotion
 
 @Composable
 fun DashboardScreen(
@@ -137,7 +143,13 @@ fun DashboardScreen(
 
         // Detalle de cuentas (expandible)
         item {
-            AnimatedVisibility(visible = state.isAccountsExpanded) {
+            AnimatedVisibility(
+                visible = state.isAccountsExpanded,
+                enter = expandVertically(animationSpec = tween(FinanzMotion.ExpandCollapseMillis)) +
+                        fadeIn(animationSpec = tween(FinanzMotion.FadeMillis)),
+                exit = shrinkVertically(animationSpec = tween(FinanzMotion.ExpandCollapseMillis)) +
+                        fadeOut(animationSpec = tween(FinanzMotion.FadeMillis))
+            ) {
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     state.accounts.forEach { accountItem ->
                         AccountRow(accountItem)

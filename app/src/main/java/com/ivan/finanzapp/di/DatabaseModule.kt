@@ -2,6 +2,7 @@ package com.ivan.finanzapp.di
 
 import android.content.Context
 import com.ivan.finanzapp.data.local.AppDatabase
+import com.ivan.finanzapp.data.local.AppearancePrefs
 import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.AssetDao
@@ -33,6 +34,11 @@ object DatabaseModule {
     @Provides
     fun provideSecurePrefs(@ApplicationContext context: Context): SecurePrefs =
         SecurePrefs(context)
+
+    @Singleton
+    @Provides
+    fun provideAppearancePrefs(@ApplicationContext context: Context): AppearancePrefs =
+        AppearancePrefs(context)
 
     @Singleton
     @Provides

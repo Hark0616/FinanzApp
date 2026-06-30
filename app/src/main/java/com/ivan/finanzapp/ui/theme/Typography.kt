@@ -6,14 +6,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 val Typography = Typography(
-    // Balance total en Dashboard
+    displayLarge = TextStyle(
+        fontWeight = FontWeight.Bold,
+        fontSize = 48.sp,
+        lineHeight = 56.sp
+    ),
     displayMedium = TextStyle(
         fontWeight = FontWeight.Bold,
         fontSize = 40.sp,
-        lineHeight = 48.sp,
-        letterSpacing = (-1).sp
+        lineHeight = 48.sp
     ),
-    // Subtítulos de sección
+    displaySmall = TextStyle(
+        fontWeight = FontWeight.Bold,
+        fontSize = 32.sp,
+        lineHeight = 40.sp
+    ),
+    headlineMedium = TextStyle(
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 36.sp
+    ),
     titleLarge = TextStyle(
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
@@ -35,10 +47,24 @@ val Typography = Typography(
         fontSize = 14.sp,
         lineHeight = 20.sp
     ),
-    // Etiquetas, chips
+    bodySmall = TextStyle(
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp
+    ),
+    labelLarge = TextStyle(
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 20.sp
+    ),
     labelMedium = TextStyle(
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
+        lineHeight = 16.sp
+    ),
+    labelSmall = TextStyle(
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
         lineHeight = 16.sp
     )
 )
