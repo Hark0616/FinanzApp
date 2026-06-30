@@ -74,7 +74,13 @@ class CategoryResolver @Inject constructor(
         "CLARO" to "cat_servicios",
         "MOVISTAR" to "cat_servicios",
         "TIGO" to "cat_servicios",
-        "WOM" to "cat_servicios"
+        "WOM" to "cat_servicios",
+
+        // Ingresos
+        "NOMINA" to "cat_ingresos",
+        "NÓMINA" to "cat_ingresos",
+        "SALARIO" to "cat_ingresos",
+        "SUELDO" to "cat_ingresos"
     )
 
     /**

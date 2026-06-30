@@ -26,6 +26,7 @@ data class SettingsUiState(
     val syncErrorMessage: String? = null,
     val isAppLockEnabled: Boolean = false,
     val isSecurityLabMode: Boolean = false,
+    val useDynamicColor: Boolean = false,
     val latestLedgerEntry: NotificationSyncLedgerEntity? = null,
     val ledgerReceivedCount: Int = 0,
     val ledgerQueuedCount: Int = 0,

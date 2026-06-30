@@ -1,5 +1,6 @@
 package com.ivan.finanzapp.ui.assets
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ivan.finanzapp.data.local.dao.*
@@ -8,15 +9,19 @@ import com.ivan.finanzapp.data.local.entity.AssetType
 import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
+import com.ivan.finanzapp.domain.finance.IncomePeriodResolver
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.dashboard.TransactionWithCategory
+import com.ivan.finanzapp.ui.widget.WidgetUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.util.UUID
 import javax.inject.Inject
@@ -42,6 +47,7 @@ data class BalanceUiState(
 
 @HiltViewModel
 class AssetsViewModel @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val assetDao: AssetDao,
     private val accountDao: AccountDao,
     private val transactionDao: TransactionDao,
@@ -76,14 +82,13 @@ class AssetsViewModel @Inject constructor(
 
         // 2. Ingresos de este mes (Filtrados del historial de movimientos)
         val localDate = LocalDate.now()
-        val startOfMonth = localDate.withDayOfMonth(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val endOfMonth = localDate.withDayOfMonth(localDate.lengthOfMonth()).plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
         val categoryMap = categories.associateBy { it.id }
         val accountMap = accounts.associateBy { it.id }
 
+        val currentMonth = YearMonth.from(localDate)
         val monthlyIncomes = transactions
-            .filter { it.type == TransactionType.INGRESO && it.timestamp in startOfMonth until endOfMonth }
+            .filter { IncomePeriodResolver.appliesToMonth(it, currentMonth, ZoneId.systemDefault()) }
             .map { tx ->
                 TransactionWithCategory(
                     transaction = tx,
@@ -180,6 +185,7 @@ class AssetsViewModel @Inject constructor(
             )
             transactionDao.insertIfNotExists(transaction)
             accountDao.adjustBalance(accountId, +amount)
+            WidgetUpdater.updateAllWidgets(context, debounceMillis = 0L)
             cloudSyncScheduler.syncSoon()
         }
     }

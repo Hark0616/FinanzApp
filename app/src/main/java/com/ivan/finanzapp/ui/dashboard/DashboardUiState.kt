@@ -20,11 +20,30 @@ data class DashboardUiState(
     val recentTransactions: List<TransactionWithCategory> = emptyList(),
     val monthlySpendingByCategory: List<CategorySpendingItem> = emptyList(),
     val pendingReviewCount: Int = 0,
-    val isAccountsExpanded: Boolean = true,
+    val unclassifiedTransactionCount: Int = 0,
     val disposableCashFlow: Double = 0.0,
     val totalIncomesThisMonth: Double = 0.0,
-    val totalDebtInstallmentsThisMonth: Double = 0.0
+    val totalDebtInstallmentsThisMonth: Double = 0.0,
+    val totalCreditCardDebt: Double = 0.0,
+    val totalLoanRemaining: Double = 0.0,
+    val monthlySpendingTotal: Double = 0.0,
+    val dominantSpendingCategoryName: String? = null,
+    val dominantSpendingPercentage: Double = 0.0,
+    val captureRecentCount: Int = 0,
+    val captureQueuedCount: Int = 0,
+    val captureFailedRecentCount: Int = 0,
+    val latestParsedAt: Long? = null,
+    val nextPaymentLabel: String? = null,
+    val nextPaymentAmount: Double = 0.0,
+    val nextPaymentDays: Int? = null,
+    val nextPaymentTarget: NextPaymentTarget? = null,
+    val debtLoadRatio: Double = 0.0
 )
+
+enum class NextPaymentTarget {
+    CREDIT_CARD,
+    LOAN
+}
 
 data class AccountWithBalance(
     val account: AccountEntity,

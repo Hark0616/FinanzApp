@@ -1,7 +1,6 @@
 package com.ivan.finanzapp.ui.widget
 
 import android.content.Context
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -15,12 +14,6 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
-import com.ivan.finanzapp.data.local.dao.AccountDao
-import com.ivan.finanzapp.data.local.dao.CreditCardDao
-import com.ivan.finanzapp.data.local.dao.LoanDao
-import com.ivan.finanzapp.data.local.entity.AccountEntity
-import com.ivan.finanzapp.data.local.entity.CreditCardEntity
-import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.ui.components.formatCOP
 import dagger.hilt.android.EntryPointAccessors
@@ -85,16 +78,11 @@ class ProximoVencimientoWidget : GlanceAppWidget() {
         val allDues = (cardDueList + loanDueList).sortedBy { it.daysRemaining }
         val nextDue = allDues.firstOrNull()
 
-        // Estilos
-        val widgetBgColor = ColorProvider(Color(0xFF1E1E1E))
-        val textPrimaryColor = ColorProvider(Color(0xFFF5F6F8))
-        val textSecondaryColor = ColorProvider(Color(0xFF8E95A5))
-
         provideContent {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .background(widgetBgColor)
+                    .background(FinanzWidgetColors.Background)
                     .cornerRadius(16.dp)
                     .padding(12.dp)
             ) {
@@ -104,9 +92,9 @@ class ProximoVencimientoWidget : GlanceAppWidget() {
                     horizontalAlignment = Alignment.Start
                 ) {
                     Text(
-                        text = "PRÓXIMO VENCIMIENTO",
+                        text = "PRÓXIMO PAGO",
                         style = TextStyle(
-                            color = textSecondaryColor,
+                            color = FinanzWidgetColors.TextMuted,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -115,9 +103,9 @@ class ProximoVencimientoWidget : GlanceAppWidget() {
                     
                     if (nextDue != null) {
                         val statusColor = when {
-                            nextDue.daysRemaining <= 3 -> Color(0xFFE57373) // Rojo
-                            nextDue.daysRemaining <= 7 -> Color(0xFFFFD54F) // Amarillo
-                            else -> Color(0xFF81C784) // Verde
+                            nextDue.daysRemaining <= 3 -> FinanzWidgetColors.ErrorColor
+                            nextDue.daysRemaining <= 7 -> FinanzWidgetColors.WarningColor
+                            else -> FinanzWidgetColors.SuccessColor
                         }
 
                         val dayText = when (nextDue.daysRemaining) {
@@ -126,7 +114,7 @@ class ProximoVencimientoWidget : GlanceAppWidget() {
                             else -> "Vence en ${nextDue.daysRemaining} días"
                         }
 
-                        val prefix = if (nextDue.isCreditCard) "TC" else "CR"
+                        val prefix = if (nextDue.isCreditCard) "Tarjeta" else "Crédito"
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -135,16 +123,17 @@ class ProximoVencimientoWidget : GlanceAppWidget() {
                             Text(
                                 text = "$prefix - ${nextDue.name}",
                                 style = TextStyle(
-                                    color = textPrimaryColor,
+                                    color = FinanzWidgetColors.TextPrimary,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold
                                 ),
-                                modifier = GlanceModifier.defaultWeight()
+                                modifier = GlanceModifier.defaultWeight(),
+                                maxLines = 1
                             )
                             Text(
                                 text = formatCOP(nextDue.amount),
                                 style = TextStyle(
-                                    color = textPrimaryColor,
+                                    color = FinanzWidgetColors.TextPrimary,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -167,7 +156,7 @@ class ProximoVencimientoWidget : GlanceAppWidget() {
                             Text(
                                 text = "Todo al día",
                                 style = TextStyle(
-                                    color = ColorProvider(Color(0xFF81C784)),
+                                    color = FinanzWidgetColors.Success,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -177,7 +166,7 @@ class ProximoVencimientoWidget : GlanceAppWidget() {
                         Text(
                             text = "No hay pagos pendientes próximamente",
                             style = TextStyle(
-                                color = textSecondaryColor,
+                                color = FinanzWidgetColors.TextSecondary,
                                 fontSize = 10.sp
                             )
                         )

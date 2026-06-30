@@ -2,6 +2,7 @@ package com.ivan.finanzapp.ui.settings
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings as AndroidSettings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -9,19 +10,24 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -35,8 +41,16 @@ import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentEntity
 import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentTargetType
 import com.ivan.finanzapp.domain.model.AccountType
-import com.ivan.finanzapp.ui.components.SectionTitle
+import com.ivan.finanzapp.ui.components.FinancialStatus
+import com.ivan.finanzapp.ui.components.FinancialStatusChip
+import com.ivan.finanzapp.ui.components.MoneyInputField
+import com.ivan.finanzapp.ui.components.OverflowActionMenu
+import com.ivan.finanzapp.ui.components.OverflowMenuAction
+import com.ivan.finanzapp.ui.components.ProgressiveFormSheet
+import com.ivan.finanzapp.ui.components.SectionControlCard
+import com.ivan.finanzapp.ui.components.formatEditableAmount
 import com.ivan.finanzapp.ui.components.formatCOP
+import com.ivan.finanzapp.ui.components.parseMoneyInput
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ivan.finanzapp.ui.security.LocalDeviceAuthenticator
@@ -57,10 +71,13 @@ fun SettingsScreen(
     var accountToEdit by remember { mutableStateOf<AccountEntity?>(null) }
     var securityMessage by remember { mutableStateOf<String?>(null) }
     var isSecurityPromptOpen by remember { mutableStateOf(false) }
+    var selectedSection by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.refreshNotificationPermission()
     }
+
+    val activeSection = selectedSection
 
     Scaffold { innerPadding ->
         LazyColumn(
@@ -72,327 +89,181 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                SettingsHeader()
-            }
-
-            item {
-                CaptureHealthCard(
-                    state = state,
-                    onConfigureClick = { viewModel.toggleProcessingDialog(true) },
-                    onOpenPermissionClick = {
-                        context.startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    }
-                )
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        SectionTitle("Fuentes de datos")
-                        Text(
-                            text = "Cuentas, tarjetas y últimos 4 dígitos para asignar notificaciones.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Button(
-                        onClick = { viewModel.toggleAddAccountDialog(true) },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Agregar", fontSize = 13.sp)
-                    }
+                if (activeSection == null) {
+                    SettingsHeader()
+                } else {
+                    SettingsDetailHeader(
+                        section = activeSection,
+                        onBack = { selectedSection = null }
+                    )
                 }
             }
 
-            if (state.accounts.isEmpty()) {
-                item {
-                    EmptyDataSourcesCard(onAddClick = { viewModel.toggleAddAccountDialog(true) })
+            if (activeSection == null) {
+                items(SettingsSection.values().toList(), key = { it.name }) { section ->
+                    SettingsSectionHubCard(
+                        section = section,
+                        subtitle = settingsSectionSummary(section, state),
+                        onClick = { selectedSection = section }
+                    )
                 }
             } else {
-                items(state.accounts, key = { it.id }) { account ->
-                    val isCredit = account.type == com.ivan.finanzapp.domain.model.AccountType.TARJETA_CREDITO
-                    val displayValue = if (isCredit) {
-                        val debt = state.creditCardsMap[account.id]?.currentDebt ?: 0.0
-                        "Deuda: ${formatCOP(debt)}"
-                    } else {
-                        formatCOP(account.currentBalance)
-                    }
-                    val valueColor = if (isCredit && (state.creditCardsMap[account.id]?.currentDebt ?: 0.0) > 0.0) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
-                    AccountItemRow(
-                        account = account,
-                        displayValue = displayValue,
-                        valueColor = valueColor,
-                        onEditClick = { accountToEdit = account },
-                        onDeleteClick = { accountToDelete = account }
-                    )
-                }
-            }
-
-            if (state.recentFinancialAdjustments.isNotEmpty()) {
-                item {
-                    RecentFinancialAdjustmentsCard(state.recentFinancialAdjustments)
-                }
-            }
-
-            item {
-                SecuritySettingsCard(
-                    state = state,
-                    securityMessage = securityMessage,
-                    isBusy = isSecurityPromptOpen,
-                    onAppLockToggle = { enabled ->
-                        if (!enabled) {
-                            isSecurityPromptOpen = true
-                            requestLocalSecurityConfirmation(
-                                context = context,
-                                title = "Desactivar seguridad local",
-                                subtitle = "Confirma con tu huella o PIN para desactivar",
-                                cancelMessage = "Confirmación cancelada. El bloqueo local sigue activo.",
-                                onSuccess = {
-                                    isSecurityPromptOpen = false
-                                    securityMessage = "Bloqueo local desactivado."
-                                    viewModel.setAppLockEnabled(false)
-                                },
-                                onError = { message ->
-                                    isSecurityPromptOpen = false
-                                    securityMessage = message
-                                }
-                            )
-                        } else {
-                            isSecurityPromptOpen = true
-                            requestLocalSecurityConfirmation(
-                                context = context,
-                                title = "Activar seguridad local",
-                                subtitle = "Confirma con biometría o PIN del celular",
-                                cancelMessage = "Confirmación cancelada. No se activó el bloqueo local.",
-                                onSuccess = {
-                                    isSecurityPromptOpen = false
-                                    securityMessage = "Bloqueo local activado."
-                                    viewModel.setAppLockEnabled(true)
-                                },
-                                onError = { message ->
-                                    isSecurityPromptOpen = false
-                                    securityMessage = message
+                when (activeSection) {
+                    SettingsSection.AutomaticReading -> {
+                        item {
+                            CaptureHealthCard(
+                                state = state,
+                                onOpenPermissionClick = {
+                                    context.startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                                 }
                             )
                         }
-                    }
-                )
-            }
-
-            item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            }
-
-            // Sección: Copia de Seguridad y Sincronización en la Nube
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = if (state.currentUserEmail != null) Icons.Default.CloudDone else Icons.Default.CloudOff,
-                                contentDescription = null,
-                                tint = if (state.currentUserEmail != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Backup y sincronización",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = if (state.currentUserEmail != null)
-                                        "Conectado como ${state.currentUserEmail}"
-                                    else "Tus datos siguen locales hasta que conectes una cuenta.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                        item {
+                            AutomationLauncherCard(onClick = { viewModel.toggleProcessingDialog(true) })
                         }
+                    }
 
-                        if (state.currentUserEmail != null) {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                            ) {
-                                Column(Modifier.padding(12.dp)) {
-                                    Text(
-                                        text = if (state.lastCloudSyncAt > 0L)
-                                            "Última copia: ${formatLastSyncTime(state.lastCloudSyncAt)}"
-                                        else "Aún no hay una copia confirmada en la nube.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Text(
-                                        text = "La app también intentará respaldar en segundo plano cuando haya conexión.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
-                                    )
-                                }
-                            }
-
-                            AnimatedVisibility(visible = state.syncStatusMessage != null) {
-                                state.syncStatusMessage?.let { message ->
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.secondaryContainer,
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = message,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier.padding(12.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            AnimatedVisibility(visible = state.syncErrorMessage != null) {
-                                state.syncErrorMessage?.let { message ->
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.errorContainer,
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = message,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onErrorContainer,
-                                            modifier = Modifier.padding(12.dp)
-                                        )
-                                    }
-                                }
-                            }
-
+                    SettingsSection.Accounts -> {
+                        item {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
+                                horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Text(
+                                    text = "Cuentas, tarjetas y últimos 4 dígitos para asignar notificaciones.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(Modifier.width(12.dp))
                                 Button(
-                                    onClick = { viewModel.syncNow() },
-                                    modifier = Modifier.padding(end = 8.dp),
-                                    enabled = !state.isSyncing
+                                    onClick = { viewModel.toggleAddAccountDialog(true) },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
-                                    if (state.isSyncing) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                            strokeWidth = 2.dp
-                                        )
-                                    } else {
-                                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    }
+                                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text(if (state.isSyncing) "Sincronizando" else "Sincronizar ahora", fontSize = 12.sp)
-                                }
-                                TextButton(
-                                    onClick = { viewModel.signOut() }
-                                ) {
-                                    Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Cerrar Sesión", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                    Text("Agregar", fontSize = 13.sp)
                                 }
                             }
+                        }
+
+                        if (state.accounts.isEmpty()) {
+                            item {
+                                EmptyDataSourcesCard(onAddClick = { viewModel.toggleAddAccountDialog(true) })
+                            }
                         } else {
-                            Button(
-                                onClick = onNavigateToAuth,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Activar backup en la nube", fontWeight = FontWeight.Bold)
+                            items(state.accounts, key = { it.id }) { account ->
+                                val isCredit = account.type == com.ivan.finanzapp.domain.model.AccountType.TARJETA_CREDITO
+                                val displayValue = if (isCredit) {
+                                    val debt = state.creditCardsMap[account.id]?.currentDebt ?: 0.0
+                                    "Deuda: ${formatCOP(debt)}"
+                                } else {
+                                    formatCOP(account.currentBalance)
+                                }
+                                val valueColor = if (isCredit && (state.creditCardsMap[account.id]?.currentDebt ?: 0.0) > 0.0) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                                AccountItemRow(
+                                    account = account,
+                                    displayValue = displayValue,
+                                    valueColor = valueColor,
+                                    onEditClick = { accountToEdit = account },
+                                    onDeleteClick = { accountToDelete = account }
+                                )
+                            }
+                        }
+
+                        if (state.recentFinancialAdjustments.isNotEmpty()) {
+                            item {
+                                RecentFinancialAdjustmentsCard(state.recentFinancialAdjustments)
                             }
                         }
                     }
-                }
-            }
 
-            item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            }
-
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.toggleProcessingDialog(true) },
-                    shape = RoundedCornerShape(8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
+                    SettingsSection.Appearance -> {
+                        item {
+                            AppearanceSettingsCard(
+                                useDynamicColor = state.useDynamicColor,
+                                onUseDynamicColorChange = viewModel::setUseDynamicColor
                             )
-                            Spacer(Modifier.width(16.dp))
-                            Column {
-                                Text(
-                                    text = "Automatización",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Parser local, IA opcional, reglas personalizadas y privacidad.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = "Configurar",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    }
+
+                    SettingsSection.Security -> {
+                        item {
+                            SecuritySettingsCard(
+                                state = state,
+                                securityMessage = securityMessage,
+                                isBusy = isSecurityPromptOpen,
+                                onAppLockToggle = { enabled ->
+                                    if (!enabled) {
+                                        isSecurityPromptOpen = true
+                                        requestLocalSecurityConfirmation(
+                                            context = context,
+                                            title = "Desactivar seguridad local",
+                                            subtitle = "Confirma con tu huella o PIN para desactivar",
+                                            cancelMessage = "Confirmación cancelada. El bloqueo local sigue activo.",
+                                            onSuccess = {
+                                                isSecurityPromptOpen = false
+                                                securityMessage = "Bloqueo local desactivado."
+                                                viewModel.setAppLockEnabled(false)
+                                            },
+                                            onError = { message ->
+                                                isSecurityPromptOpen = false
+                                                securityMessage = message
+                                            }
+                                        )
+                                    } else {
+                                        isSecurityPromptOpen = true
+                                        requestLocalSecurityConfirmation(
+                                            context = context,
+                                            title = "Activar seguridad local",
+                                            subtitle = "Confirma con biometría o PIN del celular",
+                                            cancelMessage = "Confirmación cancelada. No se activó el bloqueo local.",
+                                            onSuccess = {
+                                                isSecurityPromptOpen = false
+                                                securityMessage = "Bloqueo local activado."
+                                                viewModel.setAppLockEnabled(true)
+                                            },
+                                            onError = { message ->
+                                                isSecurityPromptOpen = false
+                                                securityMessage = message
+                                            }
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    SettingsSection.Backup -> {
+                        item {
+                            BackupSettingsCard(
+                                state = state,
+                                onNavigateToAuth = onNavigateToAuth,
+                                onSyncNow = { viewModel.syncNow() },
+                                onSignOut = { viewModel.signOut() }
+                            )
+                        }
+                    }
+
+                    SettingsSection.Advanced -> {
+                        item {
+                            AdvancedSettingsCard(
+                                state = state,
+                                onSaveApiKey = { viewModel.saveApiKey(it) }
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // Diálogo para Agregar Cuenta
         if (state.isAddAccountDialogVisible) {
-            AddAccountDialog(
+            AddAccountSheet(
                 onDismiss = { viewModel.toggleAddAccountDialog(false) },
                 onConfirm = { name, type, balance, limit, cutoff, due, interest, digits ->
                     viewModel.addAccount(name, type, balance, limit, cutoff, due, interest, digits)
@@ -482,34 +353,25 @@ fun SettingsScreen(
                         }
                         if (!isCredit) {
                             item {
-                                OutlinedTextField(
+                                MoneyInputField(
                                     value = editBalance,
                                     onValueChange = { editBalance = it },
-                                    label = { Text("Nuevo saldo manual ($)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    label = "Nuevo saldo manual"
                                 )
                             }
                         } else {
                             item {
-                                OutlinedTextField(
+                                MoneyInputField(
                                     value = editCreditLimit,
                                     onValueChange = { editCreditLimit = it },
-                                    label = { Text("Cupo límite ($)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    label = "Cupo límite"
                                 )
                             }
                             item {
-                                OutlinedTextField(
+                                MoneyInputField(
                                     value = editCurrentDebt,
                                     onValueChange = { editCurrentDebt = it },
-                                    label = { Text("Deuda visible ($)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    label = "Deuda visible"
                                 )
                             }
                         }
@@ -551,20 +413,16 @@ fun SettingsScreen(
             )
         }
 
-        // Diálogo Consolidador para Automatización
         if (state.isProcessingDialogVisible) {
             AutomationSettingsDialog(
                 state = state,
                 onDismiss = { viewModel.toggleProcessingDialog(false) },
                 onModeSelected = { viewModel.setNotificationProcessingMode(it) },
-                onSaveApiKey = { viewModel.saveApiKey(it) },
                 onLocalAiToggle = { viewModel.setLocalAiEnabled(it) },
-                onOpenCustomRules = { viewModel.toggleCustomRulesDialog(true) },
-                apiKeyInputInitial = state.apiKey
+                onOpenCustomRules = { viewModel.toggleCustomRulesDialog(true) }
             )
         }
 
-        // Diálogo para Reglas de Parseo Personalizadas
         if (state.isCustomRulesDialogVisible) {
             CustomRulesDialog(
                 state = state,
@@ -576,47 +434,293 @@ fun SettingsScreen(
     }
 }
 
+private enum class SettingsSection(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector
+) {
+    AutomaticReading(
+        title = "Lectura automática",
+        subtitle = "Permisos, estado de captura y cómo leer movimientos.",
+        icon = Icons.Default.Notifications
+    ),
+    Accounts(
+        title = "Cuentas y tarjetas",
+        subtitle = "Fuentes de dinero, tarjetas y últimos 4 dígitos.",
+        icon = Icons.Default.AccountBalanceWallet
+    ),
+    Appearance(
+        title = "Apariencia",
+        subtitle = "Paleta visual y colores dinámicos.",
+        icon = Icons.Default.Palette
+    ),
+    Security(
+        title = "Seguridad",
+        subtitle = "Bloqueo local, privacidad y acceso al dispositivo.",
+        icon = Icons.Default.Security
+    ),
+    Backup(
+        title = "Backup",
+        subtitle = "Cuenta, copia en nube y sincronización manual.",
+        icon = Icons.Default.CloudUpload
+    ),
+    Advanced(
+        title = "Avanzado",
+        subtitle = "Claves y opciones técnicas poco frecuentes.",
+        icon = Icons.Default.Settings
+    )
+}
+
+@Composable
+private fun SettingsDetailHeader(
+    section: SettingsSection,
+    onBack: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Volver"
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = section.title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = section.subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionHubCard(
+    section: SettingsSection,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    SectionControlCard(
+        title = section.title,
+        subtitle = subtitle,
+        icon = section.icon,
+        modifier = Modifier.clickable { onClick() },
+        trailing = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "Abrir",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    )
+}
+
+private fun settingsSectionSummary(
+    section: SettingsSection,
+    state: SettingsUiState
+): String {
+    return when (section) {
+        SettingsSection.AutomaticReading -> when {
+            !state.isNotificationListenerEnabled -> "Permiso pendiente para leer notificaciones bancarias."
+            state.ledgerRecentFailedCount > 0 -> "${state.ledgerRecentFailedCount} lecturas con error reciente."
+            state.ledgerQueuedCount > 0 -> "${state.ledgerQueuedCount} pendientes por procesar."
+            state.ledgerTotalCount > 0 -> "${state.ledgerParsedCount} leídas. Captura operativa."
+            else -> "Sin capturas todavía."
+        }
+        SettingsSection.Accounts -> when (state.accounts.size) {
+            0 -> "Sin cuentas configuradas."
+            1 -> "1 cuenta o tarjeta configurada."
+            else -> "${state.accounts.size} cuentas o tarjetas configuradas."
+        }
+        SettingsSection.Appearance -> if (state.useDynamicColor) {
+            "Colores dinámicos activos."
+        } else {
+            "Paleta FinanzApp fija."
+        }
+        SettingsSection.Security -> if (state.isAppLockEnabled) {
+            "Bloqueo local activo."
+        } else {
+            "Bloqueo local desactivado."
+        }
+        SettingsSection.Backup -> state.currentUserEmail?.let {
+            "Conectado como $it."
+        } ?: "Datos locales hasta conectar una cuenta."
+        SettingsSection.Advanced -> "IA en nube y claves opcionales."
+    }
+}
+
+@Composable
+private fun BackupSettingsCard(
+    state: SettingsUiState,
+    onNavigateToAuth: () -> Unit,
+    onSyncNow: () -> Unit,
+    onSignOut: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (state.currentUserEmail != null) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                    contentDescription = null,
+                    tint = if (state.currentUserEmail != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Backup y sincronización",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (state.currentUserEmail != null) {
+                            "Conectado como ${state.currentUserEmail}"
+                        } else {
+                            "Tus datos siguen locales hasta que conectes una cuenta."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (state.currentUserEmail != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            text = if (state.lastCloudSyncAt > 0L) {
+                                "Última copia: ${formatLastSyncTime(state.lastCloudSyncAt)}"
+                            } else {
+                                "Aún no hay una copia confirmada en la nube."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "La app también intentará respaldar en segundo plano cuando haya conexión.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                        )
+                        Text(
+                            text = "Incluye cuentas, movimientos, tarjetas, créditos, reglas y registro de lectura.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                        )
+                    }
+                }
+
+                AnimatedVisibility(visible = state.syncStatusMessage != null) {
+                    state.syncStatusMessage?.let { message ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                }
+
+                AnimatedVisibility(visible = state.syncErrorMessage != null) {
+                    state.syncErrorMessage?.let { message ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onSyncNow,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !state.isSyncing
+                    ) {
+                        if (state.isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (state.isSyncing) "Sincronizando" else "Sincronizar ahora", fontSize = 12.sp)
+                    }
+                    TextButton(onClick = onSignOut) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Cerrar Sesión", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            } else {
+                Button(
+                    onClick = onNavigateToAuth,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Activar backup en la nube", fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    text = "El backup incluye cuentas, movimientos, tarjetas, créditos, reglas y registro de lectura.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 private fun formatLastSyncTime(timestampMillis: Long): String {
     val formatter = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
     return formatter.format(Date(timestampMillis))
-}
-
-private fun parseMoneyInput(value: String): Double? {
-    val raw = value
-        .trim()
-        .replace("$", "")
-        .replace(" ", "")
-    val commaCount = raw.count { it == ',' }
-    val dotCount = raw.count { it == '.' }
-    val cleaned = when {
-        commaCount > 1 && dotCount == 0 -> raw.replace(",", "")
-        dotCount > 1 && commaCount == 0 -> raw.replace(".", "")
-        commaCount > 0 && dotCount > 0 -> {
-            if (raw.lastIndexOf(',') > raw.lastIndexOf('.')) {
-                raw.replace(".", "").replace(",", ".")
-            } else {
-                raw.replace(",", "")
-            }
-        }
-        commaCount == 1 -> {
-            val decimals = raw.substringAfterLast(',').length
-            if (decimals == 3) raw.replace(",", "") else raw.replace(",", ".")
-        }
-        dotCount == 1 -> {
-            val decimals = raw.substringAfterLast('.').length
-            if (decimals == 3) raw.replace(".", "") else raw
-        }
-        else -> raw
-    }
-    return cleaned.toDoubleOrNull()?.takeIf { it >= 0.0 }
-}
-
-private fun formatEditableAmount(value: Double): String {
-    return if (value % 1.0 == 0.0) {
-        value.toLong().toString()
-    } else {
-        value.toString()
-    }
 }
 
 private fun requestLocalSecurityConfirmation(
@@ -661,32 +765,117 @@ private fun SettingsHeader() {
 }
 
 @Composable
+private fun AutomationLauncherCard(onClick: () -> Unit) {
+    SectionControlCard(
+        title = "Cómo leer movimientos",
+        subtitle = "Modo recomendado, lectura local, nube y reglas personalizadas.",
+        icon = Icons.Default.AutoAwesome,
+        modifier = Modifier.clickable { onClick() },
+        trailing = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "Configurar",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    )
+}
+
+@Composable
+private fun AdvancedSettingsCard(
+    state: SettingsUiState,
+    onSaveApiKey: (String) -> Unit
+) {
+    var apiKeyInput by remember(state.apiKey) { mutableStateOf(state.apiKey) }
+    var showApiKey by remember { mutableStateOf(false) }
+
+    SectionControlCard(
+        title = "IA en nube",
+        subtitle = "Clave de OpenRouter para respaldo de lectura cuando el modo lo permita.",
+        icon = Icons.Default.Settings
+    ) {
+        OutlinedTextField(
+            value = apiKeyInput,
+            onValueChange = { apiKeyInput = it },
+            label = { Text("Clave de OpenRouter") },
+            supportingText = {
+                Text("Se guarda cifrada en este celular y no se incluye en el backup.")
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { showApiKey = !showApiKey }) {
+                    Icon(
+                        imageVector = if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = "Mostrar u ocultar"
+                    )
+                }
+            },
+            shape = MaterialTheme.shapes.small
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Button(onClick = { onSaveApiKey(apiKeyInput) }) {
+                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Guardar clave")
+            }
+        }
+        AnimatedVisibility(visible = state.isSavedSuccess) {
+            Text(
+                "Clave guardada.",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
 private fun CaptureHealthCard(
     state: SettingsUiState,
-    onConfigureClick: () -> Unit,
     onOpenPermissionClick: () -> Unit
 ) {
     val total = state.ledgerTotalCount
     val statusTitle = when {
         !state.isNotificationListenerEnabled -> "Permiso requerido"
-        state.ledgerRecentFailedCount > 0 -> "Revisar fallos"
+        state.ledgerRecentFailedCount > 0 -> "Con error"
         state.ledgerRecentCount == 0 && total > 0 -> "Sin actividad reciente"
         total == 0 -> "Sin capturas todavía"
         state.ledgerParsedCount > 0 -> "Captura operativa"
         else -> "Captura en observación"
     }
-    val statusColor = when {
-        !state.isNotificationListenerEnabled -> MaterialTheme.colorScheme.error
-        state.ledgerRecentFailedCount > 0 -> MaterialTheme.colorScheme.error
-        total == 0 -> MaterialTheme.colorScheme.onSurfaceVariant
-        else -> MaterialTheme.colorScheme.primary
+    val financialStatus = when {
+        !state.isNotificationListenerEnabled -> FinancialStatus.Error
+        state.ledgerRecentFailedCount > 0 -> FinancialStatus.Error
+        total == 0 -> FinancialStatus.Neutral
+        state.ledgerQueuedCount > 0 -> FinancialStatus.Warning
+        else -> FinancialStatus.Positive
+    }
+    val statusIcon = when (financialStatus) {
+        FinancialStatus.Positive -> Icons.Default.CheckCircle
+        FinancialStatus.Warning -> Icons.Default.Warning
+        FinancialStatus.Error -> Icons.Default.Error
+        FinancialStatus.Neutral -> Icons.Default.Info
     }
     val latestReceivedText = state.latestLedgerEntry?.let {
-        val status = it.status.name.lowercase().replaceFirstChar(Char::titlecase)
+        val status = when (it.status.name) {
+            "PARSED" -> "Leída"
+            "QUEUED" -> "Pendiente"
+            "FAILED" -> "Con error"
+            "DUPLICATE" -> "Duplicada"
+            "IGNORED" -> "Ignorada"
+            "RECEIVED" -> "Recibida"
+            else -> it.status.name.lowercase().replaceFirstChar(Char::titlecase)
+        }
         "Recibida ${formatLastSyncTime(it.receivedAtMillis)} · $status"
     } ?: "Aún no se ha recibido una notificación bancaria."
     val latestText = state.latestParsedLedgerEntry?.let {
-        "Parseada ${formatLastSyncTime(it.receivedAtMillis)}"
+        "Leída ${formatLastSyncTime(it.receivedAtMillis)}"
     } ?: latestReceivedText
 
     Card(
@@ -730,32 +919,35 @@ private fun CaptureHealthCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Text(
-                    text = statusTitle,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = statusColor,
-                    fontWeight = FontWeight.SemiBold
+                FinancialStatusChip(
+                    label = statusTitle,
+                    status = financialStatus,
+                    icon = statusIcon
                 )
             }
 
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CaptureStatChip("24h", state.ledgerRecentCount, Modifier.weight(1f))
-                CaptureStatChip("Parseadas", state.ledgerParsedCount, Modifier.weight(1f))
-                CaptureStatChip(
-                    "Cola",
-                    state.ledgerQueuedCount,
-                    Modifier.weight(1f),
-                    isWarning = state.ledgerQueuedCount > 0
-                )
-                CaptureStatChip(
-                    "Fallos",
-                    state.ledgerRecentFailedCount,
-                    Modifier.weight(1f),
-                    isWarning = state.ledgerRecentFailedCount > 0
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CaptureStatChip("24h", state.ledgerRecentCount, Modifier.weight(1f))
+                    CaptureStatChip("Leídas", state.ledgerParsedCount, Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CaptureStatChip(
+                        "Pendientes",
+                        state.ledgerQueuedCount,
+                        Modifier.weight(1f),
+                        isWarning = state.ledgerQueuedCount > 0
+                    )
+                    CaptureStatChip(
+                        "Con error",
+                        state.ledgerRecentFailedCount,
+                        Modifier.weight(1f),
+                        isWarning = state.ledgerRecentFailedCount > 0
+                    )
+                }
             }
 
             if (!state.isNotificationListenerEnabled) {
@@ -767,16 +959,6 @@ private fun CaptureHealthCard(
                     Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Activar acceso a notificaciones")
-                }
-            } else {
-                OutlinedButton(
-                    onClick = onConfigureClick,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Configurar captura y reglas")
                 }
             }
         }
@@ -943,6 +1125,33 @@ private fun adjustmentTargetLabel(targetType: FinancialAdjustmentTargetType): St
 }
 
 @Composable
+private fun AppearanceSettingsCard(
+    useDynamicColor: Boolean,
+    onUseDynamicColorChange: (Boolean) -> Unit
+) {
+    val dynamicColorAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+    SectionControlCard(
+        title = "Apariencia",
+        subtitle = if (dynamicColorAvailable) {
+            "Colores dinámicos del sistema, apagados por defecto."
+        } else {
+            "Los colores dinámicos requieren Android 12 o superior."
+        },
+        icon = Icons.Default.Palette,
+        iconTint = MaterialTheme.colorScheme.secondary,
+        tonalColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
+        trailing = {
+            Switch(
+                checked = dynamicColorAvailable && useDynamicColor,
+                onCheckedChange = onUseDynamicColorChange,
+                enabled = dynamicColorAvailable
+            )
+        }
+    )
+}
+
+@Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun SecuritySettingsCard(
     state: SettingsUiState,
@@ -1009,7 +1218,7 @@ private fun SecuritySettingsCard(
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "Este bloqueo no reemplaza tu sesión de Google/Supabase; solo protege los datos locales ya descargados.",
+                        text = "Este bloqueo no reemplaza tu sesión de backup; solo protege los datos locales ya descargados.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
                     )
@@ -1045,23 +1254,22 @@ private fun SecuritySettingsCard(
 private fun NotificationModeSelector(
     state: SettingsUiState,
     onModeSelected: (String) -> Unit,
-    onSaveApiKey: (String) -> Unit,
-    onLocalAiToggle: (Boolean) -> Unit,
-    apiKeyInputInitial: String
+    onLocalAiToggle: (Boolean) -> Unit
 ) {
-    var apiKeyInput by remember(apiKeyInputInitial) { mutableStateOf(apiKeyInputInitial) }
-    var showApiKey by remember { mutableStateOf(false) }
-
     Column(
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectableGroup()
     ) {
-        // Opción 1: Flujo automático completo
         val isParser = state.processingMode == SecurePrefs.MODE_PARSER
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable {
+                .selectable(
+                    selected = isParser,
+                    role = Role.RadioButton
+                ) {
                     onModeSelected(SecurePrefs.MODE_PARSER)
                     onLocalAiToggle(true)
                 },
@@ -1076,20 +1284,17 @@ private fun NotificationModeSelector(
             ) {
                 RadioButton(
                     selected = isParser,
-                    onClick = {
-                        onModeSelected(SecurePrefs.MODE_PARSER)
-                        onLocalAiToggle(true)
-                    }
+                    onClick = null
                 )
                 Spacer(Modifier.width(8.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Automático: Reglas → IA Local → IA Nube",
+                        text = "Recomendado",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Primero usa parsers y reglas personalizadas. Si fallan, intenta IA local y luego OpenRouter como último recurso.",
+                        text = "Reglas locales, luego IA local si está disponible y OpenRouter solo si guardaste una clave.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1097,12 +1302,14 @@ private fun NotificationModeSelector(
             }
         }
 
-        // Opción 2: IA Local (Gemini Nano)
         val isLocalAi = state.processingMode == SecurePrefs.MODE_LOCAL_AI
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(enabled = state.isLocalAiSupported) {
+                .selectable(
+                    selected = isLocalAi,
+                    role = Role.RadioButton
+                ) {
                     onModeSelected(SecurePrefs.MODE_LOCAL_AI)
                     onLocalAiToggle(true)
                 },
@@ -1117,20 +1324,20 @@ private fun NotificationModeSelector(
             ) {
                 RadioButton(
                     selected = isLocalAi,
-                    enabled = state.isLocalAiSupported,
-                    onClick = {
-                        onModeSelected(SecurePrefs.MODE_LOCAL_AI)
-                        onLocalAiToggle(true)
-                    }
+                    onClick = null
                 )
                 Spacer(Modifier.width(8.dp))
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = "Privado: Reglas → IA Local",
+                            text = "Solo en este celular",
+                            modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (state.isLocalAiSupported) Color.Unspecified else Color.Gray
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(Modifier.width(6.dp))
                         if (!state.isLocalAiSupported) {
@@ -1139,7 +1346,7 @@ private fun NotificationModeSelector(
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
-                                    text = "No compatible",
+                                    text = "Sin IA local",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
@@ -1148,9 +1355,9 @@ private fun NotificationModeSelector(
                         }
                     }
                     val descText = if (state.isLocalAiSupported) {
-                        "Usa reglas y fallback local únicamente. No envía notificaciones a OpenRouter."
+                        "Usa reglas y, si hace falta, IA local. No envía notificaciones a OpenRouter."
                     } else {
-                        "IA local requiere un dispositivo compatible; si no está disponible, este modo no tendrá fallback."
+                        "Usa reglas locales sin respaldo de nube ni IA local."
                     }
                     Text(
                         text = descText,
@@ -1161,12 +1368,14 @@ private fun NotificationModeSelector(
             }
         }
 
-        // Opción 3: IA en la Nube (Gemini Flash)
         val isCloudAi = state.processingMode == SecurePrefs.MODE_CLOUD_AI
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onModeSelected(SecurePrefs.MODE_CLOUD_AI) },
+                .selectable(
+                    selected = isCloudAi,
+                    role = Role.RadioButton
+                ) { onModeSelected(SecurePrefs.MODE_CLOUD_AI) },
             colors = CardDefaults.cardColors(
                 containerColor = if (isCloudAi) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
             ),
@@ -1178,75 +1387,24 @@ private fun NotificationModeSelector(
             ) {
                 RadioButton(
                     selected = isCloudAi,
-                    onClick = { onModeSelected(SecurePrefs.MODE_CLOUD_AI) }
+                    onClick = null
                 )
                 Spacer(Modifier.width(8.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Nube directa: Reglas → IA Nube",
+                        text = "Nube",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Procesamiento por reglas con fallback directo a IA en la nube, saltando la IA local.",
+                        text = if (state.apiKey.isBlank()) {
+                            "Necesita una clave de OpenRouter guardada en Avanzado."
+                        } else {
+                            "Lee con reglas y usa OpenRouter como respaldo directo cuando haga falta."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            }
-        }
-
-        // Sección adicional: Si el modo puede usar nube, pedir la API Key de OpenRouter.
-        AnimatedVisibility(visible = isParser || isCloudAi) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "Clave API de OpenRouter:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
-                    Text(
-                        text = "Se guarda cifrada solo en este dispositivo. No se sincroniza con Supabase ni queda en el backup de tu cuenta.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
-                    OutlinedTextField(
-                        value = apiKeyInput,
-                        onValueChange = { apiKeyInput = it },
-                        label = { Text("OpenRouter API Key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { showApiKey = !showApiKey }) {
-                                Icon(
-                                    imageVector = if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = "Mostrar/Ocultar"
-                                )
-                            }
-                        }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = { onSaveApiKey(apiKeyInput) },
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text("Guardar API Key")
-                    }
-                    AnimatedVisibility(visible = state.isSavedSuccess) {
-                        Text(
-                            "¡API Key guardada correctamente!",
-                            color = Color(0xFF2E7D32),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
                 }
             }
         }
@@ -1259,10 +1417,8 @@ private fun AutomationSettingsDialog(
     state: SettingsUiState,
     onDismiss: () -> Unit,
     onModeSelected: (String) -> Unit,
-    onSaveApiKey: (String) -> Unit,
     onLocalAiToggle: (Boolean) -> Unit,
-    onOpenCustomRules: () -> Unit,
-    apiKeyInputInitial: String
+    onOpenCustomRules: () -> Unit
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -1289,12 +1445,12 @@ private fun AutomationSettingsDialog(
                 ) {
                     Column {
                         Text(
-                            text = "Automatización e IA",
+                            text = "Cómo leer movimientos",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Gestiona la lectura de tus transacciones",
+                            text = "Elige cómo convertir notificaciones en movimientos",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1314,7 +1470,7 @@ private fun AutomationSettingsDialog(
                     // 1. Selector de modo de procesamiento
                     item {
                         Text(
-                            text = "Modo de Procesamiento de Mensajes:",
+                            text = "Modo de lectura",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium
                         )
@@ -1322,16 +1478,14 @@ private fun AutomationSettingsDialog(
                         NotificationModeSelector(
                             state = state,
                             onModeSelected = onModeSelected,
-                            onSaveApiKey = onSaveApiKey,
-                            onLocalAiToggle = onLocalAiToggle,
-                            apiKeyInputInitial = apiKeyInputInitial
+                            onLocalAiToggle = onLocalAiToggle
                         )
                     }
 
                     // 2. Acceso a Reglas Personalizadas
                     item {
                         Text(
-                            text = "Reglas Personalizadas:",
+                            text = "Reglas personalizadas",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium
                         )
@@ -1363,7 +1517,7 @@ private fun AutomationSettingsDialog(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
                                         Text(
-                                            "Entrenador de Reglas de Parseo",
+                                            "Entrenador de reglas",
                                             fontWeight = FontWeight.Bold,
                                             style = MaterialTheme.typography.bodyMedium
                                         )
@@ -1445,7 +1599,11 @@ private fun AccountItemRow(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(account.type.displayName, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text(
+                            account.type.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         account.lastFourDigits?.takeIf { it.isNotBlank() }?.let { digits ->
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
@@ -1473,12 +1631,21 @@ private fun AccountItemRow(
                     color = valueColor,
                     fontWeight = FontWeight.SemiBold
                 )
-                IconButton(onClick = onEditClick) {
-                    Icon(Icons.Default.Edit, contentDescription = "Corrección auditada", tint = Color.Gray)
-                }
-                IconButton(onClick = onDeleteClick) {
-                    Icon(Icons.Default.Delete, contentDescription = "Eliminar cuenta", tint = Color.Gray)
-                }
+                OverflowActionMenu(
+                    actions = listOf(
+                        OverflowMenuAction(
+                            label = "Corrección auditada",
+                            icon = Icons.Default.Edit,
+                            onClick = onEditClick
+                        ),
+                        OverflowMenuAction(
+                            label = "Eliminar cuenta",
+                            icon = Icons.Default.Delete,
+                            destructive = true,
+                            onClick = onDeleteClick
+                        )
+                    )
+                )
             }
         }
     }
@@ -1547,13 +1714,13 @@ private fun PrivacyAndSecurityCard() {
                         Spacer(Modifier.width(8.dp))
                         Column {
                             Text(
-                                "Procesamiento local por defecto",
+                                "Lectura local por defecto",
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "Las reglas y parsers se ejecutan en el celular. Si activas backup, tus datos se sincronizan con tu cuenta en la nube; no se promete que todo quede solo local.",
+                                "Las reglas y lectores locales se ejecutan en el celular. Si activas backup, tus datos se sincronizan con tu cuenta en la nube; no se promete que todo quede solo local.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1576,7 +1743,7 @@ private fun PrivacyAndSecurityCard() {
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "El listener debe evaluar solo paquetes bancarios autorizados. Los mensajes que no cumplen reglas quedan ignorados o fallidos en el ledger para auditoría.",
+                                "La app debe evaluar solo paquetes bancarios autorizados. Los mensajes que no cumplen reglas quedan ignorados o con error en el registro interno.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1622,7 +1789,7 @@ private fun PrivacyAndSecurityCard() {
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "La base local usa SQLCipher. El bloqueo local protege la app en uso, pero el respaldo en nube depende de la sesión y reglas de Supabase.",
+                                "La base del celular está cifrada. El bloqueo local protege la app en uso, y la copia en nube depende de tu sesión de backup.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1723,7 +1890,7 @@ private fun DeviceOptimizationGuideCard() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddAccountDialog(
+private fun AddAccountSheet(
     onDismiss: () -> Unit,
     onConfirm: (
         name: String,
@@ -1740,209 +1907,209 @@ private fun AddAccountDialog(
     var type by remember { mutableStateOf(AccountType.AHORROS) }
     var initialBalance by remember { mutableStateOf("") }
     var lastFourDigits by remember { mutableStateOf("") }
-
-    // Campos de Tarjeta de Crédito
     var creditLimit by remember { mutableStateOf("") }
     var cutoffDay by remember { mutableStateOf("15") }
     var paymentDueDay by remember { mutableStateOf("30") }
     var interestRateEA by remember { mutableStateOf("") }
 
-    var typeExpanded by remember { mutableStateOf(false) }
+    val isCredit = type == AccountType.TARJETA_CREDITO
+    val parsedBalance = parseMoneyInput(initialBalance)
+    val parsedLimit = parseMoneyInput(creditLimit)
+    val parsedCutoff = cutoffDay.toIntOrNull()
+    val parsedDue = paymentDueDay.toIntOrNull()
+    val parsedInterest = interestRateEA.trim().replace(",", ".").toDoubleOrNull()
+    val isBalanceValid = isCredit || initialBalance.isBlank() || parsedBalance != null
+    val isLimitValid = !isCredit || ((parsedLimit ?: 0.0) > 0.0)
+    val areCreditDaysValid = !isCredit || (
+            parsedCutoff != null && parsedCutoff in 1..31 &&
+                    parsedDue != null && parsedDue in 1..31
+            )
+    val isInterestValid = interestRateEA.isBlank() || parsedInterest != null
+    val canSave = name.isNotBlank() && isBalanceValid && isLimitValid && areCreditDaysValid && isInterestValid
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Agregar Cuenta") },
-        text = {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                item {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Nombre") },
-                        placeholder = { Text("Ej: Ahorros, Efectivo, Bolsa") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+    ProgressiveFormSheet(
+        title = "Agregar cuenta",
+        subtitle = if (isCredit) "Configura cupo, corte y pago de la tarjeta." else "Registra la fuente que verá la app al clasificar movimientos.",
+        onDismiss = onDismiss,
+        primaryActionLabel = "Guardar",
+        canSubmit = canSave,
+        onSubmit = {
+            val balance = if (isCredit) 0.0 else (parsedBalance ?: 0.0)
+            val limit = parsedLimit ?: 0.0
+            val cutoff = parsedCutoff ?: 15
+            val due = parsedDue ?: 30
+            val digits = lastFourDigits.trim().takeIf { it.isNotBlank() }
+            onConfirm(name.trim(), type, balance, limit, cutoff, due, parsedInterest, digits)
+        }
+    ) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Nombre") },
+            placeholder = { Text("Ej: Ahorros, Efectivo, Bolsa") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = MaterialTheme.shapes.small
+        )
+        OutlinedTextField(
+            value = lastFourDigits,
+            onValueChange = { input ->
+                if (input.length <= 4 && input.all(Char::isDigit)) {
+                    lastFourDigits = input
+                }
+            },
+            label = { Text("Últimos 4 dígitos (opcional)") },
+            placeholder = { Text("Opcional") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            shape = MaterialTheme.shapes.small
+        )
+        Text(
+            "Tipo de cuenta",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AccountType.entries.groupBy { it.category }.forEach { (category, types) ->
+                Text(
+                    text = category,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold
+                )
+                types.forEach { accountType ->
+                    AccountTypeChoiceCard(
+                        type = accountType,
+                        selected = accountType == type,
+                        onClick = { type = accountType }
                     )
                 }
-
-                item {
-                    OutlinedTextField(
-                        value = lastFourDigits,
-                        onValueChange = { input ->
-                            if (input.length <= 4 && input.all { it.isDigit() }) {
-                                lastFourDigits = input
-                            }
-                        },
-                        label = { Text("Últimos 4 dígitos (opcional)") },
-                        placeholder = { Text("Ej: 5039") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                }
-
-                item {
-                    Text("Tipo de Cuenta", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = type.displayName,
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = {
-                                IconButton(onClick = { typeExpanded = true }) {
-                                    Icon(Icons.Default.ArrowDropDown, null)
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { typeExpanded = true }
-                        )
-
-                        DropdownMenu(
-                            expanded = typeExpanded,
-                            onDismissRequest = { typeExpanded = false },
-                            modifier = Modifier.fillMaxWidth(0.9f)
-                        ) {
-                            val groupedTypes = AccountType.entries.groupBy { it.category }
-                            groupedTypes.forEach { (category, types) ->
-                                Text(
-                                    text = category.uppercase(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.secondary,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                )
-                                types.forEach { t ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                val tIcon = when (t) {
-                                                    AccountType.AHORROS -> Icons.Default.AccountBalance
-                                                    AccountType.TARJETA_CREDITO -> Icons.Default.CreditCard
-                                                    AccountType.NEQUI -> Icons.Default.Smartphone
-                                                    AccountType.DAVIPLATA -> Icons.Default.AccountBalanceWallet
-                                                    AccountType.EFECTIVO -> Icons.Default.Payments
-                                                    AccountType.INVERSION -> Icons.AutoMirrored.Filled.ShowChart
-                                                    else -> Icons.Default.Wallet
-                                                }
-                                                Icon(
-                                                    tIcon,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(20.dp),
-                                                    tint = MaterialTheme.colorScheme.primary
-                                                )
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(t.displayName)
-                                            }
-                                        },
-                                        onClick = {
-                                            type = t
-                                            typeExpanded = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (type != AccountType.TARJETA_CREDITO) {
-                    item {
-                        OutlinedTextField(
-                            value = initialBalance,
-                            onValueChange = { initialBalance = it },
-                            label = { Text("Saldo Actual ($)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                    }
-                }
-
-                // Mostrar campos adicionales si es Tarjeta de Crédito
-                if (type == AccountType.TARJETA_CREDITO) {
-                    item {
-                        OutlinedTextField(
-                            value = creditLimit,
-                            onValueChange = { creditLimit = it },
-                            label = { Text("Cupo Limite de Crédito ($)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                    }
-
-                    item {
-                        OutlinedTextField(
-                            value = cutoffDay,
-                            onValueChange = { cutoffDay = it },
-                            label = { Text("Día de Corte (1-31)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                    }
-
-                    item {
-                        OutlinedTextField(
-                            value = paymentDueDay,
-                            onValueChange = { paymentDueDay = it },
-                            label = { Text("Día Límite de Pago (1-31)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                    }
-
-                    item {
-                        OutlinedTextField(
-                            value = interestRateEA,
-                            onValueChange = { interestRateEA = it },
-                            label = { Text("Tasa de Interés EA (%) - Opcional") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            val isBalanceValid = if (type == AccountType.TARJETA_CREDITO) true else {
-                initialBalance.isBlank() || initialBalance.toDoubleOrNull() != null
-            }
-            val isLimitValid = if (type == AccountType.TARJETA_CREDITO) {
-                (creditLimit.toDoubleOrNull() ?: 0.0) > 0.0
-            } else true
-
-            Button(
-                onClick = {
-                    // Para tarjetas de crédito, la deuda siempre inicia en $0.
-                    // La deuda se construye desde las Compras Diferidas dentro de cada tarjeta.
-                    val balance = if (type == AccountType.TARJETA_CREDITO) 0.0
-                                  else (initialBalance.toDoubleOrNull() ?: 0.0)
-                    val limit = creditLimit.toDoubleOrNull() ?: 0.0
-                    val cutoff = cutoffDay.toIntOrNull() ?: 15
-                    val due = paymentDueDay.toIntOrNull() ?: 30
-                    val ea = interestRateEA.toDoubleOrNull()
-
-                    if (name.isNotBlank()) {
-                        val digits = lastFourDigits.trim().takeIf { it.isNotBlank() }
-                        onConfirm(name, type, balance, limit, cutoff, due, ea, digits)
-                    }
-                },
-                enabled = name.isNotBlank() && isBalanceValid && isLimitValid
-            ) {
-                Text("Guardar")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
             }
         }
-    )
+
+        if (!isCredit) {
+            MoneyInputField(
+                value = initialBalance,
+                onValueChange = { initialBalance = it },
+                label = "Saldo actual",
+                isError = initialBalance.isNotBlank() && parsedBalance == null,
+                supportingText = if (initialBalance.isNotBlank() && parsedBalance == null) "Monto inválido" else null
+            )
+        } else {
+            MoneyInputField(
+                value = creditLimit,
+                onValueChange = { creditLimit = it },
+                label = "Cupo límite",
+                isError = creditLimit.isNotBlank() && !isLimitValid,
+                supportingText = if (creditLimit.isNotBlank() && !isLimitValid) "Debe ser mayor que cero" else null
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = cutoffDay,
+                    onValueChange = { cutoffDay = it.filter(Char::isDigit).take(2) },
+                    label = { Text("Corte") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    isError = parsedCutoff == null || parsedCutoff !in 1..31,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = MaterialTheme.shapes.small
+                )
+                OutlinedTextField(
+                    value = paymentDueDay,
+                    onValueChange = { paymentDueDay = it.filter(Char::isDigit).take(2) },
+                    label = { Text("Pago") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    isError = parsedDue == null || parsedDue !in 1..31,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = MaterialTheme.shapes.small
+                )
+            }
+            OutlinedTextField(
+                value = interestRateEA,
+                onValueChange = { interestRateEA = it.filter { char -> char.isDigit() || char == '.' || char == ',' } },
+                label = { Text("Tasa EA opcional") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                isError = !isInterestValid,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                shape = MaterialTheme.shapes.small
+            )
+        }
+    }
+}
+
+@Composable
+private fun AccountTypeChoiceCard(
+    type: AccountType,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+        border = CardDefaults.outlinedCardBorder()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = accountTypeIcon(type),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    type.displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    accountTypeSubtitle(type),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+private fun accountTypeIcon(type: AccountType) = when (type) {
+    AccountType.AHORROS -> Icons.Default.AccountBalance
+    AccountType.TARJETA_CREDITO -> Icons.Default.CreditCard
+    AccountType.NEQUI -> Icons.Default.Smartphone
+    AccountType.DAVIPLATA -> Icons.Default.AccountBalanceWallet
+    AccountType.EFECTIVO -> Icons.Default.Payments
+    AccountType.INVERSION -> Icons.AutoMirrored.Filled.ShowChart
+    AccountType.OTRO -> Icons.Default.Wallet
+}
+
+private fun accountTypeSubtitle(type: AccountType) = when (type) {
+    AccountType.AHORROS -> "Banco o cuenta principal"
+    AccountType.NEQUI,
+    AccountType.DAVIPLATA -> "Billetera digital"
+    AccountType.TARJETA_CREDITO -> "Cupo, corte y fecha de pago"
+    AccountType.EFECTIVO -> "Caja o efectivo manual"
+    AccountType.INVERSION -> "Fiducia, inversión o bolsillo"
+    AccountType.OTRO -> "Fuente manual"
 }

@@ -10,6 +10,7 @@ import com.ivan.finanzapp.domain.model.TransactionType
  * otros mensajes o formatos no estructurados al fallback de IA de la app.
  */
 class SmsParser : BankParser {
+    private val daviviendaParser = DaviviendaParser()
 
     override val source = BankSource.SMS
 
@@ -59,6 +60,12 @@ class SmsParser : BankParser {
 
         DaviplataMessagePatterns.parse(title, text)?.let { parsed ->
             return parsed
+        }
+
+        if (fullText.contains("DAVIVIENDA", ignoreCase = true)) {
+            daviviendaParser.parse(title, text)?.let { parsed ->
+                return parsed
+            }
         }
 
         val currentSource = if (isBancolombia) BankSource.BANCOLOMBIA else BankSource.SMS

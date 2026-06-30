@@ -26,14 +26,19 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ivan.finanzapp.data.local.entity.AccountEntity
+import com.ivan.finanzapp.data.local.AppearancePrefs
 import com.ivan.finanzapp.data.security.SecureLog
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.ui.components.formatCOP
 import com.ivan.finanzapp.ui.theme.FinanzAppTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class QuickAddActivity : ComponentActivity() {
+    @Inject
+    lateinit var appearancePrefs: AppearancePrefs
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -52,7 +57,8 @@ class QuickAddActivity : ComponentActivity() {
         }
         
         setContent {
-            FinanzAppTheme {
+            val useDynamicColor by appearancePrefs.useDynamicColor.collectAsState(initial = false)
+            FinanzAppTheme(dynamicColor = useDynamicColor) {
                 QuickAddScreen(
                     initialAmount = initialAmount,
                     initialMerchant = initialMerchant,

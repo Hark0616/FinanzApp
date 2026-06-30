@@ -34,6 +34,22 @@ class ParserDispatcherTest {
         assertEquals(BankSource.DAVIPLATA, parsed.source)
     }
 
+    @Test
+    fun dispatchesDaviviendaPayrollSmsThroughMessagingPackage() {
+        val parsed = dispatcher.dispatch(
+            packageName = "com.google.android.apps.messaging",
+            title = "",
+            text = "DAVIVIENDA Abono Pago de Nomina, \$6,174,962, Cta de Ahorros *5607,Hora 15:54,Lugar Portal pyme BI-KON SAS."
+        )
+
+        assertNotNull(parsed)
+        requireNotNull(parsed)
+        assertEquals(TransactionType.INGRESO, parsed.type)
+        assertEquals(6_174_962.0, parsed.amount, MONEY_DELTA)
+        assertEquals("Nómina - Portal pyme BI-KON SAS", parsed.merchant)
+        assertEquals(BankSource.DAVIVIENDA, parsed.source)
+    }
+
     private companion object {
         const val MONEY_DELTA = 0.001
     }

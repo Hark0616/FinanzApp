@@ -40,16 +40,11 @@ class UltimosMovimientosWidget : GlanceAppWidget() {
         val categories = categoryDao.getAllSnapshot()
         val categoryMap = categories.associateBy { it.id }
 
-        val widgetBgColor = ColorProvider(Color(0xFF1E1E1E))
-        val textPrimaryColor = ColorProvider(Color(0xFFF5F6F8))
-        val textSecondaryColor = ColorProvider(Color(0xFF8E95A5))
-        val dividerColor = ColorProvider(Color(0xFF2D323E))
-
         provideContent {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .background(widgetBgColor)
+                    .background(FinanzWidgetColors.Background)
                     .cornerRadius(16.dp)
                     .padding(12.dp)
                     .clickable(actionStartActivity(MainActivity::class.java))
@@ -66,9 +61,9 @@ class UltimosMovimientosWidget : GlanceAppWidget() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "ÚLTIMOS MOVIMIENTOS",
+                            text = "ACTIVIDAD RECIENTE",
                             style = TextStyle(
-                                color = textSecondaryColor,
+                                color = FinanzWidgetColors.TextMuted,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -85,7 +80,7 @@ class UltimosMovimientosWidget : GlanceAppWidget() {
                             Text(
                                 text = "Sin movimientos recientes",
                                 style = TextStyle(
-                                    color = textSecondaryColor,
+                                    color = FinanzWidgetColors.TextSecondary,
                                     fontSize = 12.sp
                                 )
                             )
@@ -100,7 +95,7 @@ class UltimosMovimientosWidget : GlanceAppWidget() {
                                         modifier = GlanceModifier
                                             .fillMaxWidth()
                                             .height(1.dp)
-                                            .background(dividerColor)
+                                            .background(FinanzWidgetColors.Outline)
                                     )
                                 }
 
@@ -137,7 +132,7 @@ class UltimosMovimientosWidget : GlanceAppWidget() {
                                         Text(
                                             text = displayName,
                                             style = TextStyle(
-                                                color = textPrimaryColor,
+                                                color = FinanzWidgetColors.TextPrimary,
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Medium
                                             ),
@@ -146,7 +141,7 @@ class UltimosMovimientosWidget : GlanceAppWidget() {
                                         Text(
                                             text = formatTransactionTime(transaction.timestamp),
                                             style = TextStyle(
-                                                color = textSecondaryColor,
+                                                color = FinanzWidgetColors.TextMuted,
                                                 fontSize = 9.sp
                                             ),
                                             maxLines = 1
@@ -160,13 +155,13 @@ class UltimosMovimientosWidget : GlanceAppWidget() {
 
                                     val (amountText, amountColor) = when {
                                         isIncome -> {
-                                            "+" + formatCOP(transaction.amount) to Color(0xFF81C784)
+                                            "+" + formatCOP(transaction.amount) to FinanzWidgetColors.SuccessColor
                                         }
                                         isExpense -> {
-                                            "-" + formatCOP(transaction.amount) to Color(0xFFE57373)
+                                            "-" + formatCOP(transaction.amount) to FinanzWidgetColors.ErrorColor
                                         }
                                         else -> {
-                                            formatCOP(transaction.amount) to Color(0xFF8E95A5) // e.g. TRANSFERENCIA
+                                            formatCOP(transaction.amount) to FinanzWidgetColors.TextMutedColor
                                         }
                                     }
 
@@ -188,11 +183,11 @@ class UltimosMovimientosWidget : GlanceAppWidget() {
     }
 
     private fun parseHexColor(hex: String?): Color {
-        if (hex.isNullOrBlank()) return Color(0xFF8E95A5)
+        if (hex.isNullOrBlank()) return FinanzWidgetColors.TextMutedColor
         return try {
             Color(android.graphics.Color.parseColor(hex))
         } catch (e: Exception) {
-            Color(0xFF8E95A5)
+            FinanzWidgetColors.TextMutedColor
         }
     }
 

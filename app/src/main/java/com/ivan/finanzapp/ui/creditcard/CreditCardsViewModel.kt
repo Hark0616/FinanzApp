@@ -1,5 +1,6 @@
 package com.ivan.finanzapp.ui.creditcard
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
@@ -16,7 +17,9 @@ import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.dashboard.CreditCardSummary
+import com.ivan.finanzapp.ui.widget.WidgetUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -27,6 +30,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class CreditCardsViewModel @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val database: AppDatabase,
     private val creditCardDao: CreditCardDao,
     private val accountDao: AccountDao,
@@ -100,6 +104,7 @@ class CreditCardsViewModel @Inject constructor(
                 deferredPurchaseDao.upsert(purchase)
                 recalculateCardDebt(cardId)
             }
+            refreshWidgets()
             cloudSyncScheduler.syncSoon()
         }
     }
@@ -110,6 +115,7 @@ class CreditCardsViewModel @Inject constructor(
                 deferredPurchaseDao.delete(purchaseId)
                 recalculateCardDebt(cardId)
             }
+            refreshWidgets()
             cloudSyncScheduler.syncSoon()
         }
     }
@@ -121,6 +127,7 @@ class CreditCardsViewModel @Inject constructor(
                 deferredPurchaseDao.deleteIfFullyPaid(purchaseId)
                 recalculateCardDebt(cardId)
             }
+            refreshWidgets()
             cloudSyncScheduler.syncSoon()
         }
     }
@@ -185,6 +192,7 @@ class CreditCardsViewModel @Inject constructor(
                     accountDao.adjustBalance(accountId, -paymentAmount)
                 }
             }
+            refreshWidgets()
             cloudSyncScheduler.syncSoon()
         }
     }
@@ -214,7 +222,12 @@ class CreditCardsViewModel @Inject constructor(
                 deferredPurchaseDao.upsert(purchase)
                 recalculateCardDebt(cardId)
             }
+            refreshWidgets()
             cloudSyncScheduler.syncSoon()
         }
+    }
+
+    private fun refreshWidgets() {
+        WidgetUpdater.updateAllWidgets(context, debounceMillis = 0L)
     }
 }

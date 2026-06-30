@@ -1,7 +1,6 @@
 package com.ivan.finanzapp.ui.widget
 
 import android.content.Context
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -15,18 +14,9 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
-import com.ivan.finanzapp.data.local.dao.AccountDao
-import com.ivan.finanzapp.data.local.dao.CreditCardDao
-import com.ivan.finanzapp.data.local.dao.TransactionDao
-import com.ivan.finanzapp.data.local.entity.AccountEntity
-import com.ivan.finanzapp.data.local.entity.CreditCardEntity
-import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.domain.model.AccountType
-import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.components.formatCOP
 import dagger.hilt.android.EntryPointAccessors
-import java.time.LocalDate
-import java.time.ZoneId
 
 class DisponibleNetoWidget : GlanceAppWidget() {
 
@@ -35,7 +25,6 @@ class DisponibleNetoWidget : GlanceAppWidget() {
         val entryPoint = EntryPointAccessors.fromApplication(appContext, WidgetEntryPoint::class.java)
         val accountDao = entryPoint.accountDao()
         val creditCardDao = entryPoint.creditCardDao()
-        val transactionDao = entryPoint.transactionDao()
 
         val accounts = accountDao.getAllAccountsSnapshot()
 
@@ -53,36 +42,23 @@ class DisponibleNetoWidget : GlanceAppWidget() {
             }
         }
 
-        val netBalance = totalBalance - totalDebt
-
-        // 3. Determinar el color del indicador basándose en el flujo de caja del mes
-        val today = LocalDate.now()
-        val monthStart = LocalDate.of(today.year, today.month, 1)
-            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val monthEnd = LocalDate.now().plusMonths(1).withDayOfMonth(1)
-            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-
-        val transactions = transactionDao.getByDateRangeSnapshot(monthStart, monthEnd)
-        val income = transactions.filter {
-            it.type == TransactionType.INGRESO
-        }.sumOf { it.amount }
-        
-        val spent = transactions.filter {
-            it.type == TransactionType.GASTO || it.type == TransactionType.GASTO_TC
-        }.sumOf { it.amount }
-        
-        val flow = income - spent
-        val dotColor = if (flow >= 0) Color(0xFF81C784) else Color(0xFFFFD54F) // Verde si el flujo es positivo, Amarillo si es negativo
-
-        val widgetBgColor = ColorProvider(Color(0xFF1E1E1E))
-        val textPrimaryColor = ColorProvider(Color(0xFFF5F6F8))
-        val textSecondaryColor = ColorProvider(Color(0xFF8E95A5))
+        val dotColor = when {
+            totalBalance <= 0.0 -> FinanzWidgetColors.ErrorColor
+            totalDebt > totalBalance -> FinanzWidgetColors.WarningColor
+            totalDebt > 0.0 -> FinanzWidgetColors.PrimaryColor
+            else -> FinanzWidgetColors.SuccessColor
+        }
+        val detailText = when {
+            totalDebt > 0.0 -> "Tarjetas ${formatCOP(totalDebt)}"
+            normalAccounts.isEmpty() -> "Sin cuentas"
+            else -> "${normalAccounts.size} cuentas"
+        }
 
         provideContent {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .background(widgetBgColor)
+                    .background(FinanzWidgetColors.Background)
                     .cornerRadius(16.dp)
                     .padding(12.dp)
             ) {
@@ -96,9 +72,9 @@ class DisponibleNetoWidget : GlanceAppWidget() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "DISPONIBLE NETO",
+                            text = "DISPONIBLE AHORA",
                             style = TextStyle(
-                                color = textSecondaryColor,
+                                color = FinanzWidgetColors.TextMuted,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold
                             ),
@@ -114,12 +90,22 @@ class DisponibleNetoWidget : GlanceAppWidget() {
                     }
                     Spacer(modifier = GlanceModifier.height(6.dp))
                     Text(
-                        text = formatCOP(netBalance),
+                        text = formatCOP(totalBalance),
                         style = TextStyle(
-                            color = textPrimaryColor,
+                            color = FinanzWidgetColors.TextPrimary,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold
                         )
+                    )
+                    Spacer(modifier = GlanceModifier.height(2.dp))
+                    Text(
+                        text = detailText,
+                        style = TextStyle(
+                            color = if (totalDebt > 0.0) FinanzWidgetColors.Error else FinanzWidgetColors.TextSecondary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        maxLines = 1
                     )
                 }
             }

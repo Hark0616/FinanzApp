@@ -2,7 +2,6 @@ package com.ivan.finanzapp.ui.dashboard
 
 import android.content.Intent
 import android.provider.Settings
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,13 +9,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -32,12 +29,21 @@ import com.ivan.finanzapp.ui.components.*
 import com.ivan.finanzapp.ui.theme.TrafficGreen
 import com.ivan.finanzapp.ui.theme.TrafficRed
 import com.ivan.finanzapp.ui.theme.TrafficYellow
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.abs
 
 @Composable
 fun DashboardScreen(
     onNavigateToTransactions: () -> Unit = {},
+    onNavigateToReviewTransactions: () -> Unit = onNavigateToTransactions,
+    onNavigateToUnclassifiedTransactions: () -> Unit = onNavigateToTransactions,
     onNavigateToSettings: () -> Unit = {},
     onNavigateToBalance: () -> Unit = {},
+    onNavigateToCreditCards: () -> Unit = {},
+    onNavigateToLoans: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -69,31 +75,13 @@ fun DashboardScreen(
             .background(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(bottom = 96.dp)
     ) {
-        // Cabecera superior con botón de Ajustes
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Inicio",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                IconButton(onClick = onNavigateToSettings) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Ajustes",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
+            HomeHeader(
+                latestParsedAt = state.latestParsedAt,
+                onSettingsClick = onNavigateToSettings
+            )
         }
-        // Banner de permiso de notificaciones
+
         if (!state.isNotificationPermissionGranted) {
             item {
                 NotificationPermissionBanner(
@@ -106,95 +94,72 @@ fun DashboardScreen(
             }
         }
 
-        // Banner de transacciones pendientes de revisión
-        if (state.pendingReviewCount > 0) {
-            item {
-                PendingReviewBanner(
-                    count = state.pendingReviewCount,
-                    onClick = onNavigateToTransactions
-                )
-            }
-        }
-
-        // Card de balance total con gradiente
         item {
-            BalanceTotalCard(
-                totalBalance = state.totalBalance,
-                isExpanded = state.isAccountsExpanded,
-                onToggleExpand = viewModel::toggleAccountsExpanded
+            HomeFinancialHero(
+                state = state,
+                onPrimaryAction = onNavigateToBalance
             )
         }
 
-        // Card de flujo de caja disponible del mes
         item {
-            DisposableCashFlowCard(
-                disposableCashFlow = state.disposableCashFlow,
-                totalIncomes = state.totalIncomesThisMonth,
-                totalDebt = state.totalDebtInstallmentsThisMonth,
-                onClick = onNavigateToBalance
-            )
-        }
-
-        // Detalle de cuentas (expandible)
-        item {
-            AnimatedVisibility(visible = state.isAccountsExpanded) {
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    state.accounts.forEach { accountItem ->
-                        AccountRow(accountItem)
+            NextCommitmentSection(
+                state = state,
+                onClick = {
+                    when (state.nextPaymentTarget) {
+                        NextPaymentTarget.CREDIT_CARD -> onNavigateToCreditCards()
+                        NextPaymentTarget.LOAN -> onNavigateToLoans()
+                        null -> onNavigateToBalance()
                     }
                 }
-            }
+            )
         }
 
-        // Tarjetas de crédito
-        if (state.creditCards.isNotEmpty()) {
-            item {
-                Spacer(Modifier.height(8.dp))
-                SectionTitle(
-                    text = "Tarjetas de crédito",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
-            }
-            items(state.creditCards) { card ->
-                CreditCardSummaryCard(card)
-            }
+        item {
+            MonthPulseSection(
+                totalIncomes = state.totalIncomesThisMonth,
+                totalDebt = state.totalDebtInstallmentsThisMonth
+            )
         }
 
-        // Gastos del mes por categoría
-        if (state.monthlySpendingByCategory.isNotEmpty()) {
-            item {
-                Spacer(Modifier.height(8.dp))
-                SectionTitle(
-                    text = "Gastos del mes",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
-                SpendingByCategoryList(state.monthlySpendingByCategory)
-            }
+        item {
+            HomeSignalsSection(
+                state = state,
+                onReviewClick = onNavigateToReviewTransactions,
+                onUnclassifiedClick = onNavigateToUnclassifiedTransactions,
+                onCaptureClick = onNavigateToSettings,
+                onSpendingClick = onNavigateToTransactions
+            )
         }
 
-        // Últimos movimientos
+        item {
+            HomeSummarySection(state = state)
+        }
+
         if (state.recentTransactions.isNotEmpty()) {
             item {
-                Spacer(Modifier.height(8.dp))
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 26.dp, bottom = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SectionTitle(text = "Últimos movimientos")
+                    Text(
+                        "Actividad reciente",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                     TextButton(onClick = onNavigateToTransactions) {
                         Text("Ver todos")
                     }
                 }
             }
-            items(state.recentTransactions) { item ->
+            items(state.recentTransactions.take(3)) { item ->
                 TransactionRow(item)
             }
         }
 
-        // Pantalla vacía si no hay nada
         if (state.accounts.isEmpty() && state.recentTransactions.isEmpty()) {
             item { EmptyStateCard() }
         }
@@ -241,236 +206,482 @@ private fun NotificationPermissionBanner(onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun PendingReviewBanner(count: Int, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        ),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.secondary)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "$count movimientos necesitan revisión",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
-            )
-            Spacer(Modifier.weight(1f))
-            Icon(Icons.Default.ChevronRight, null)
-        }
-    }
-}
-
-@Composable
-private fun BalanceTotalCard(
-    totalBalance: Double,
-    isExpanded: Boolean,
-    onToggleExpand: () -> Unit
+private fun HomeHeader(
+    latestParsedAt: Long?,
+    onSettingsClick: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(Color(0xFF2E7D32), Color(0xFF1B5E20))
-                ),
-                shape = RoundedCornerShape(20.dp)
-            )
-            .clickable(onClick = onToggleExpand)
-    ) {
-        Column(Modifier.padding(24.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Balance total",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 14.sp
-                )
-                Icon(
-                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (isExpanded) "Contraer" else "Expandir",
-                    tint = Color.White.copy(alpha = 0.7f)
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                formatCOP(totalBalance),
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 38.sp,
-                lineHeight = 44.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun AccountRow(item: AccountWithBalance) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Default.AccountBalance,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+        Column {
+            Text(
+                text = "Inicio",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
             )
-            Spacer(Modifier.width(10.dp))
-            Text(item.account.name, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = latestUpdatedText(latestParsedAt),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        Text(
-            formatCOP(item.displayBalance),
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold
-        )
+        IconButton(
+            onClick = onSettingsClick,
+            colors = IconButtonDefaults.iconButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        ) {
+            Icon(Icons.Default.Settings, contentDescription = "Ajustes")
+        }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
-private fun CreditCardSummaryCard(card: CreditCardSummary) {
-    val barColor = when (card.usageLevel) {
-        "LOW" -> TrafficGreen
-        "MEDIUM" -> TrafficYellow
-        else -> TrafficRed
+private fun HomeFinancialHero(
+    state: DashboardUiState,
+    onPrimaryAction: () -> Unit
+) {
+    val isShort = state.disposableCashFlow < 0.0
+    val statusText = if (isShort) "Mes por cubrir" else "Con margen"
+    val projectionCopy = if (isShort) {
+        "Faltan ${formatCOP(abs(state.disposableCashFlow))} para cubrir tus compromisos de este mes."
+    } else {
+        "Te quedan ${formatCOP(state.disposableCashFlow)} después de compromisos de este mes."
     }
 
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(top = 14.dp, bottom = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Disponible ahora",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Surface(
+                color = if (isShort) TrafficYellow.copy(alpha = 0.18f) else TrafficGreen.copy(alpha = 0.18f),
+                contentColor = if (isShort) TrafficYellow else TrafficGreen,
+                shape = RoundedCornerShape(50)
+            ) {
+                Text(
+                    text = statusText,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = formatCOP(state.totalBalance),
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = projectionCopy,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            lineHeight = 20.sp
+        )
+
+        Spacer(Modifier.height(18.dp))
+        Button(
+            onClick = onPrimaryAction,
+            shape = RoundedCornerShape(50),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ),
+            modifier = Modifier.height(46.dp)
+        ) {
+            Text("Ver plan del mes", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun NextCommitmentSection(
+    state: DashboardUiState,
+    onClick: () -> Unit
+) {
+    val label = state.nextPaymentLabel
+    HomeSectionHeader("Siguiente acción")
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(2.dp)
+            .padding(horizontal = 20.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        ),
+        border = CardDefaults.outlinedCardBorder(),
+        shape = RoundedCornerShape(22.dp)
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(18.dp)) {
             Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
-                Text(card.account.name, style = MaterialTheme.typography.titleMedium)
-                Icon(Icons.Default.CreditCard, null, tint = MaterialTheme.colorScheme.primary)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = nextPaymentTypeText(state.nextPaymentTarget),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = label ?: "Sin compromisos próximos",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (label == null) {
+                            "Tarjetas y créditos al día"
+                        } else {
+                            paymentDaysText(state.nextPaymentDays)
+                        },
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = label?.let { formatCOP(state.nextPaymentAmount) } ?: "",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (label != null) {
+                        Text(
+                            text = "Prioridad",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = paymentSignalColor(state.nextPaymentDays)
+                        )
+                    }
+                }
             }
-
-            Spacer(Modifier.height(12.dp))
-
-            // Barra de uso del cupo
-            Text(
-                "Uso del cupo: ${formatPercentage(card.usagePercentage)}",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(Modifier.height(4.dp))
-            LinearProgressIndicator(
-                progress = { (card.usagePercentage / 100).toFloat().coerceIn(0f, 1f) },
+            Spacer(Modifier.height(16.dp))
+            FilledTonalButton(
+                onClick = onClick,
+                shape = RoundedCornerShape(50),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(8.dp),
-                color = barColor,
-                trackColor = barColor.copy(alpha = 0.15f)
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column {
-                    Text("Deuda actual", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
-                    Text(
-                        formatCOP(card.card.currentDebt),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TrafficRed
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("Disponible", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
-                    Text(
-                        formatCOP(card.availableCredit),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TrafficGreen
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(8.dp))
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column {
-                    Text("Cuota mínima", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
-                    Text(formatCOP(card.minimumPayment), style = MaterialTheme.typography.bodyMedium)
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("Próximo pago", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
-                    val dayText = when {
-                        card.daysUntilDue == 0 -> "¡Hoy!"
-                        card.daysUntilDue == 1 -> "Mañana"
-                        card.daysUntilDue < 0 -> "Vencida"
-                        else -> "En ${card.daysUntilDue} días"
-                    }
-                    val dayColor = when {
-                        card.daysUntilDue <= 3 -> TrafficRed
-                        card.daysUntilDue <= 7 -> TrafficYellow
-                        else -> MaterialTheme.colorScheme.onSurface
-                    }
-                    Text(dayText, style = MaterialTheme.typography.bodyMedium, color = dayColor)
-                }
+                    .height(44.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            ) {
+                Text(nextPaymentActionText(state.nextPaymentTarget), fontWeight = FontWeight.Bold)
             }
         }
     }
 }
 
 @Composable
-private fun SpendingByCategoryList(items: List<CategorySpendingItem>) {
-    Column(Modifier.padding(horizontal = 16.dp)) {
-        items.take(6).forEach { item ->
-            Row(
-                Modifier
+private fun MonthPulseSection(
+    totalIncomes: Double,
+    totalDebt: Double
+) {
+    val total = totalIncomes + totalDebt
+    val incomeRatio = if (total > 0.0) (totalIncomes / total).toFloat().coerceIn(0f, 1f) else 0f
+
+    HomeSectionHeader("Pulso del mes")
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+        ),
+        shape = RoundedCornerShape(20.dp),
+        border = CardDefaults.outlinedCardBorder()
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            LinearProgressIndicator(
+                progress = { incomeRatio },
+                modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .height(8.dp),
+                color = TrafficGreen,
+                trackColor = TrafficYellow.copy(alpha = 0.45f)
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    if (item.category != null) {
-                        CategoryChip(
-                            name = item.category.name,
-                            colorHex = item.category.color
-                        )
-                    } else {
-                        CategoryChip(name = "Sin categoría", colorHex = "#9E9E9E")
-                    }
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        formatCOP(item.total),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        formatPercentage(item.percentage),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.Gray
-                    )
-                }
+                PulseLabel("Ingresos", formatCOP(totalIncomes))
+                PulseLabel("Compromisos", formatCOP(totalDebt), alignEnd = true)
             }
         }
     }
 }
+
+@Composable
+private fun PulseLabel(
+    label: String,
+    value: String,
+    alignEnd: Boolean = false
+) {
+    Column(horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+private fun HomeSignalsSection(
+    state: DashboardUiState,
+    onReviewClick: () -> Unit,
+    onUnclassifiedClick: () -> Unit,
+    onCaptureClick: () -> Unit,
+    onSpendingClick: () -> Unit
+) {
+    val signals = buildList {
+        when {
+            state.captureFailedRecentCount > 0 -> add(
+                HomeSignal(
+                    title = "Captura con error",
+                    subtitle = "${state.captureFailedRecentCount} fallos recientes",
+                    action = "Ajustes",
+                    color = TrafficRed,
+                    onClick = onCaptureClick
+                )
+            )
+            state.captureQueuedCount > 0 -> add(
+                HomeSignal(
+                    title = "Lecturas pendientes",
+                    subtitle = "${state.captureQueuedCount} por leer",
+                    action = "Ajustes",
+                    color = TrafficYellow,
+                    onClick = onCaptureClick
+                )
+            )
+        }
+
+        if (state.unclassifiedTransactionCount > 0) {
+            add(
+                HomeSignal(
+                    title = "Movimientos sin cuenta",
+                    subtitle = "${state.unclassifiedTransactionCount} por asociar",
+                    action = "Asociar",
+                    color = TrafficYellow,
+                    onClick = onUnclassifiedClick
+                )
+            )
+        }
+
+        if (state.pendingReviewCount > 0) {
+            add(
+                HomeSignal(
+                    title = "Movimientos por revisar",
+                    subtitle = "${state.pendingReviewCount} pendientes",
+                    action = "Revisar",
+                    color = TrafficYellow,
+                    onClick = onReviewClick
+                )
+            )
+        }
+
+        if (
+            state.dominantSpendingCategoryName.equals("Otros", ignoreCase = true) &&
+            state.dominantSpendingPercentage > 50.0
+        ) {
+            add(
+                HomeSignal(
+                    title = "Revisar categoría Otros",
+                    subtitle = "Concentra ${formatPercentage(state.dominantSpendingPercentage)} del gasto del mes",
+                    action = "Revisar",
+                    color = TrafficYellow,
+                    onClick = onSpendingClick
+                )
+            )
+        }
+    }.take(2).ifEmpty {
+        listOf(
+            HomeSignal(
+                title = "Todo al día",
+                subtitle = "Sin señales críticas por ahora",
+                action = "Listo",
+                color = TrafficGreen,
+                onClick = null
+            )
+        )
+    }
+
+    HomeSectionHeader("Señales")
+    Column(
+        modifier = Modifier.padding(horizontal = 20.dp)
+    ) {
+        signals.forEachIndexed { index, signal ->
+            HomeSignalRow(signal)
+            if (index < signals.lastIndex) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeSignalRow(signal: HomeSignal) {
+    val clickableModifier = signal.onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(clickableModifier)
+            .padding(vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = signal.title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = signal.subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = signal.action,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = signal.color
+        )
+    }
+}
+
+@Composable
+private fun HomeSummarySection(state: DashboardUiState) {
+    HomeSectionHeader("Resumen")
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+        ),
+        shape = RoundedCornerShape(22.dp),
+        border = CardDefaults.outlinedCardBorder()
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+            HomeSummaryRow(
+                title = "Cuentas",
+                subtitle = "Disponible ahora",
+                value = formatCOP(state.totalBalance)
+            )
+            HomeSummaryRow(
+                title = "Saldo en tarjetas",
+                subtitle = "Deuda actual",
+                value = formatCOP(state.totalCreditCardDebt)
+            )
+            HomeSummaryRow(
+                title = "Créditos pendientes",
+                subtitle = "Capital por pagar",
+                value = formatCOP(state.totalLoanRemaining)
+            )
+            HomeSummaryRow(
+                title = "Gastos del mes",
+                subtitle = monthlySpendingSummaryText(state),
+                value = formatCOP(state.monthlySpendingTotal),
+                showDivider = false
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeSummaryRow(
+    title: String,
+    subtitle: String,
+    value: String,
+    showDivider: Boolean = true
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold
+        )
+    }
+    if (showDivider) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+    }
+}
+
+@Composable
+private fun HomeSectionHeader(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(top = 26.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onBackground
+    )
+}
+
+private data class HomeSignal(
+    val title: String,
+    val subtitle: String,
+    val action: String,
+    val color: Color,
+    val onClick: (() -> Unit)?
+)
 
 @Composable
 private fun TransactionRow(item: TransactionWithCategory) {
@@ -547,85 +758,55 @@ private fun EmptyStateCard() {
     }
 }
 
-@Composable
-private fun DisposableCashFlowCard(
-    disposableCashFlow: Double,
-    totalIncomes: Double,
-    totalDebt: Double,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
-        ),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Column(Modifier.padding(20.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Flujo de Caja Disponible (Mes)",
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                Icon(
-                    Icons.AutoMirrored.Filled.TrendingUp,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                formatCOP(disposableCashFlow),
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                fontWeight = FontWeight.Bold,
-                fontSize = 28.sp,
-                lineHeight = 32.sp
-            )
-            Spacer(Modifier.height(12.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f))
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        "Ingresos",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        formatCOP(totalIncomes),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TrafficGreen
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        "Deudas Comprometidas",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        formatCOP(totalDebt),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TrafficRed
-                    )
-                }
-            }
-        }
+private fun paymentDaysText(days: Int?): String {
+    return when {
+        days == null -> "Sin fecha"
+        days < 0 -> "Vencido"
+        days == 0 -> "Hoy"
+        days == 1 -> "Mañana"
+        else -> "En $days días"
+    }
+}
+
+private fun nextPaymentTypeText(target: NextPaymentTarget?): String {
+    return when (target) {
+        NextPaymentTarget.CREDIT_CARD -> "Tarjeta por pagar"
+        NextPaymentTarget.LOAN -> "Crédito por pagar"
+        null -> "Sin pagos próximos"
+    }
+}
+
+private fun nextPaymentActionText(target: NextPaymentTarget?): String {
+    return when (target) {
+        NextPaymentTarget.CREDIT_CARD -> "Ver tarjeta"
+        NextPaymentTarget.LOAN -> "Preparar pago"
+        null -> "Ver análisis"
+    }
+}
+
+private fun monthlySpendingSummaryText(state: DashboardUiState): String {
+    val categoryName = state.dominantSpendingCategoryName
+    return if (state.monthlySpendingTotal <= 0.0 || categoryName == null) {
+        "Sin gastos este mes"
+    } else {
+        "Este mes · $categoryName ${formatPercentage(state.dominantSpendingPercentage)}"
+    }
+}
+
+private fun latestUpdatedText(latestParsedAt: Long?): String {
+    if (latestParsedAt == null) return "Captura pendiente"
+    val formatter = DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.forLanguageTag("es-CO"))
+    val formatted = Instant.ofEpochMilli(latestParsedAt)
+        .atZone(ZoneId.systemDefault())
+        .format(formatter)
+    return "Actualizado $formatted"
+}
+
+private fun paymentSignalColor(days: Int?): Color {
+    return when {
+        days == null -> TrafficGreen
+        days <= 3 -> TrafficRed
+        days <= 7 -> TrafficYellow
+        else -> TrafficGreen
     }
 }

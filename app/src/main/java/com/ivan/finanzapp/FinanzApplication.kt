@@ -6,6 +6,7 @@ import androidx.work.Configuration
 import com.ivan.finanzapp.data.local.DefaultCategories
 import com.ivan.finanzapp.data.local.dao.AssetDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
+import com.ivan.finanzapp.data.notification.PaymentReminderScheduler
 import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +36,9 @@ class FinanzApplication : Application(), Configuration.Provider {
     lateinit var cloudSyncScheduler: CloudSyncScheduler
 
     @Inject
+    lateinit var paymentReminderScheduler: PaymentReminderScheduler
+
+    @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -49,6 +53,7 @@ class FinanzApplication : Application(), Configuration.Provider {
         seedDefaultCategoriesIfNeeded()
         cleanLegacySueldoAssets()
         cloudSyncScheduler.schedulePeriodicSync()
+        paymentReminderScheduler.scheduleDailyReminders()
     }
 
     /**

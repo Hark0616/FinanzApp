@@ -80,9 +80,10 @@ class AddManualTransactionUseCase @Inject constructor(
             }
         }
 
+        if (createdTransaction != null) {
+            WidgetUpdater.updateAllWidgets(context, debounceMillis = 0L)
+        }
         createdTransaction?.let { paymentReconciliationUseCase.generateSuggestionsForTransaction(it) }
-        
-        WidgetUpdater.updateAllWidgets(context)
 
         cloudSyncScheduler.syncSoon()
     }

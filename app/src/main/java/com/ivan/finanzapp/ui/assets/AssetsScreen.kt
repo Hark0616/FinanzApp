@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,9 +37,15 @@ import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.AssetEntity
 import com.ivan.finanzapp.data.local.entity.AssetType
 import com.ivan.finanzapp.data.local.entity.CategoryEntity
+import com.ivan.finanzapp.ui.components.ActionSheet
 import com.ivan.finanzapp.ui.components.AmountText
+import com.ivan.finanzapp.ui.components.MoneyInputField
+import com.ivan.finanzapp.ui.components.QuickSelectOption
+import com.ivan.finanzapp.ui.components.QuickSelectSheet
 import com.ivan.finanzapp.ui.components.SectionTitle
+import com.ivan.finanzapp.ui.components.formatEditableAmount
 import com.ivan.finanzapp.ui.components.formatCOP
+import com.ivan.finanzapp.ui.components.parseMoneyInput
 import com.ivan.finanzapp.ui.dashboard.TransactionWithCategory
 import com.ivan.finanzapp.ui.theme.TrafficGreen
 import com.ivan.finanzapp.ui.theme.TrafficRed
@@ -56,141 +63,36 @@ fun AssetsScreen(
     var selectedCategoryForAdd by remember { mutableStateOf<AssetType?>(null) }
     var editingAsset by remember { mutableStateOf<AssetEntity?>(null) }
     var isAddIncomeDialogVisible by remember { mutableStateOf(false) }
+    var isAssetTypeSheetVisible by remember { mutableStateOf(false) }
 
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Flujo de Caja", "Patrimonio (Activos)")
+    val tabs = listOf("Flujo", "Patrimonio")
 
     Scaffold(
         floatingActionButton = {
-            if (selectedTab == 0) {
-                // FAB contextual para Ingresos: Botón "+" simple que abre el diálogo de registro manual
-                FloatingActionButton(
-                    onClick = { isAddIncomeDialogVisible = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Agregar Ingreso",
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            } else {
-                // FAB contextual para Activos: El Speed Dial animado y centrado
-                var menuExpanded by remember { mutableStateOf(false) }
-                
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Contenedor de botones individuales con animación en cascada
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        AssetType.entries.forEachIndexed { index, type ->
-                            val (icon, color, label) = when (type) {
-                                AssetType.INVERSION -> Triple(Icons.AutoMirrored.Filled.TrendingUp, Color(0xFF1976D2), "Inversión")
-                                AssetType.INMUEBLE -> Triple(Icons.Default.Home, Color(0xFF7B1FA2), "Inmueble")
-                                AssetType.VEHICULO -> Triple(Icons.Default.Build, Color(0xFFE64A19), "Vehículo")
-                                AssetType.OTRO -> Triple(Icons.Default.Folder, Color(0xFF616161), "Otro Activo")
-                            }
-
-                            // Delay progresivo para efecto de cascada
-                            val delay = (AssetType.entries.size - 1 - index) * 100
-
-                            AnimatedVisibility(
-                                visible = menuExpanded,
-                                modifier = Modifier.align(Alignment.End),
-                                enter = fadeIn(
-                                    animationSpec = tween(
-                                        durationMillis = 350,
-                                        delayMillis = delay,
-                                        easing = FastOutSlowInEasing
-                                    )
-                                ) + slideInVertically(
-                                    initialOffsetY = { it },
-                                    animationSpec = tween(
-                                        durationMillis = 350,
-                                        delayMillis = delay,
-                                        easing = FastOutSlowInEasing
-                                    )
-                                ),
-                                exit = fadeOut(
-                                    animationSpec = tween(
-                                        durationMillis = 200,
-                                        easing = FastOutLinearInEasing
-                                    )
-                                ) + slideOutVertically(
-                                    targetOffsetY = { it },
-                                    animationSpec = tween(
-                                        durationMillis = 200,
-                                        easing = FastOutLinearInEasing
-                                    )
-                                )
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.End,
-                                    modifier = Modifier
-                                        .align(Alignment.End)
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null
-                                        ) {
-                                            selectedCategoryForAdd = type
-                                            menuExpanded = false
-                                        }
-                                ) {
-                                    // Etiqueta de texto sutil flotante
-                                    Text(
-                                        text = label,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onBackground
-                                    )
-
-                                    Spacer(modifier = Modifier.width(12.dp))
-
-                                    // Botón circular del mismo tamaño que el principal, color sólido e icono blanco
-                                    FloatingActionButton(
-                                        onClick = {
-                                            selectedCategoryForAdd = type
-                                            menuExpanded = false
-                                        },
-                                        containerColor = color,
-                                        contentColor = Color.White,
-                                        modifier = Modifier.size(56.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = icon,
-                                            contentDescription = label,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Botón principal rotatorio (+ / X)
-                    val rotation by animateFloatAsState(
-                        targetValue = if (menuExpanded) 45f else 0f,
-                        label = "Rotation"
-                    )
-                    
+            when {
+                selectedTab == 0 -> {
                     FloatingActionButton(
-                        onClick = { menuExpanded = !menuExpanded },
+                        onClick = { isAddIncomeDialogVisible = true },
                         containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier
-                            .size(56.dp)
-                            .rotate(rotation)
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
-                            contentDescription = "Agregar Activo",
+                            contentDescription = "Agregar ingreso",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                selectedTab == 1 && state.assets.isNotEmpty() -> {
+                    FloatingActionButton(
+                        onClick = { isAssetTypeSheetVisible = true },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Agregar activo",
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -237,6 +139,7 @@ fun AssetsScreen(
                     // Vista 2: Patrimonio e Inmuebles (Activos)
                     AssetsTabContent(
                         state = state,
+                        onAddAssetType = { selectedCategoryForAdd = it },
                         onEditAsset = { editingAsset = it },
                         onDeleteAsset = { viewModel.deleteAsset(it.id) }
                     )
@@ -246,7 +149,7 @@ fun AssetsScreen(
 
         // Diálogos
         if (isAddIncomeDialogVisible) {
-            AddIncomeDialog(
+            AddIncomeSheet(
                 accounts = state.accounts,
                 categories = state.categories,
                 onDismiss = { isAddIncomeDialogVisible = false },
@@ -257,8 +160,18 @@ fun AssetsScreen(
             )
         }
 
+        if (isAssetTypeSheetVisible) {
+            AssetTypeActionSheet(
+                onDismiss = { isAssetTypeSheetVisible = false },
+                onSelect = { type ->
+                    selectedCategoryForAdd = type
+                    isAssetTypeSheetVisible = false
+                }
+            )
+        }
+
         selectedCategoryForAdd?.let { category ->
-            AddAssetDialog(
+            AddAssetSheet(
                 category = category,
                 onDismiss = { selectedCategoryForAdd = null },
                 onConfirm = { name, amount, type ->
@@ -269,7 +182,7 @@ fun AssetsScreen(
         }
 
         editingAsset?.let { asset ->
-            EditAssetDialog(
+            EditAssetSheet(
                 asset = asset,
                 onDismiss = { editingAsset = null },
                 onConfirm = { name, amount, type ->
@@ -488,7 +401,7 @@ private fun CashFlowTabContent(
         // Historial de Ingresos del Mes
         item {
             Text(
-                "Ingresos de este Mes",
+                "Ingresos aplicados al mes",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(top = 8.dp)
@@ -609,6 +522,7 @@ private fun IncomeItemRow(item: TransactionWithCategory) {
 @Composable
 private fun AssetsTabContent(
     state: BalanceUiState,
+    onAddAssetType: (AssetType) -> Unit,
     onEditAsset: (AssetEntity) -> Unit,
     onDeleteAsset: (AssetEntity) -> Unit
 ) {
@@ -720,38 +634,7 @@ private fun AssetsTabContent(
 
         if (state.assets.isEmpty()) {
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Folder,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            text = "No tienes activos personalizados",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Agrega tus inversiones en CDT, inmuebles o vehículos presionando el botón '+'.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    }
-                }
+                EmptyAssetTypes(onAddAssetType = onAddAssetType)
             }
         } else {
             items(state.assets, key = { it.id }) { asset ->
@@ -766,17 +649,68 @@ private fun AssetsTabContent(
 }
 
 @Composable
+private fun EmptyAssetTypes(
+    onAddAssetType: (AssetType) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "Agrega un activo",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        AssetType.entries.chunked(2).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                row.forEach { type ->
+                    Card(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 108.dp)
+                            .clickable { onAddAssetType(type) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        ),
+                        shape = MaterialTheme.shapes.medium,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = assetTypeIcon(type),
+                                contentDescription = null,
+                                tint = assetTypeColor(type),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = assetTypeLabel(type),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
 private fun AssetItem(
     asset: AssetEntity,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val (icon, color) = when (asset.type) {
-        AssetType.INVERSION -> Icons.AutoMirrored.Filled.TrendingUp to Color(0xFF1976D2)
-        AssetType.INMUEBLE -> Icons.Default.Home to Color(0xFF7B1FA2)
-        AssetType.VEHICULO -> Icons.Default.Build to Color(0xFFE64A19)
-        AssetType.OTRO -> Icons.Default.Folder to Color(0xFF616161)
-    }
+    val icon = assetTypeIcon(asset.type)
+    val color = assetTypeColor(asset.type)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -809,12 +743,7 @@ private fun AssetItem(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = when (asset.type) {
-                            AssetType.INVERSION -> "Inversión"
-                            AssetType.INMUEBLE -> "Inmueble"
-                            AssetType.VEHICULO -> "Vehículo"
-                            AssetType.OTRO -> "Otro Activo"
-                        },
+                        text = assetTypeLabel(asset.type),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -839,195 +768,147 @@ private fun AssetItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddAssetDialog(
+private fun AssetTypeActionSheet(
+    onDismiss: () -> Unit,
+    onSelect: (AssetType) -> Unit
+) {
+    ActionSheet(
+        title = "Agregar activo",
+        onDismiss = onDismiss
+    ) {
+        AssetType.entries.forEach { type ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(type) }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = assetTypeIcon(type),
+                    contentDescription = null,
+                    tint = assetTypeColor(type),
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = assetTypeLabel(type),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            HorizontalDivider(color = DividerDefaults.color.copy(alpha = 0.5f))
+        }
+    }
+}
+
+@Composable
+private fun AddAssetSheet(
     category: AssetType,
     onDismiss: () -> Unit,
     onConfirm: (name: String, amount: Double, type: AssetType) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    val amountVal = parseMoneyInput(amount)
+    val defaultName = assetTypeLabel(category)
 
-    val defaultName = when (category) {
-        AssetType.INVERSION -> "Inversión"
-        AssetType.INMUEBLE -> "Inmueble"
-        AssetType.VEHICULO -> "Vehículo"
-        AssetType.OTRO -> "Otro Activo"
+    ActionSheet(
+        title = "Registrar $defaultName",
+        onDismiss = onDismiss
+    ) {
+        MoneyInputField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "Valor",
+            isError = amount.isNotBlank() && amountVal == null,
+            supportingText = if (amount.isNotBlank() && amountVal == null) "Monto inválido" else null
+        )
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Nombre") },
+            placeholder = { Text(defaultName) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = MaterialTheme.shapes.small
+        )
+        SheetActions(
+            primaryLabel = "Guardar",
+            canSubmit = amountVal != null && amountVal > 0.0,
+            onDismiss = onDismiss,
+            onSubmit = {
+                onConfirm(name.trim().ifBlank { defaultName }, amountVal ?: return@SheetActions, category)
+            }
+        )
     }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Registrar $defaultName") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "Ingresa el valor del activo. El nombre es opcional.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = { Text("Valor / Monto ($)") },
-                    placeholder = { Text("Ej. 1.500.000") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nombre (Opcional)") },
-                    placeholder = { Text("Por defecto: $defaultName") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            val amountVal = amount.toDoubleOrNull() ?: 0.0
-            val isValid = amountVal > 0.0
-
-            Button(
-                onClick = { 
-                    val finalName = name.trim().ifBlank { defaultName }
-                    onConfirm(finalName, amountVal, category) 
-                },
-                enabled = isValid
-            ) {
-                Text("Guardar")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
-        }
-    )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EditAssetDialog(
+private fun EditAssetSheet(
     asset: AssetEntity,
     onDismiss: () -> Unit,
     onConfirm: (name: String, amount: Double, type: AssetType) -> Unit
 ) {
-    var name by remember { mutableStateOf(asset.name) }
-    var amount by remember { mutableStateOf(asset.amount.toString()) }
-    var selectedType by remember { mutableStateOf(asset.type) }
-    var dropdownExpanded by remember { mutableStateOf(false) }
+    var name by remember(asset.id) { mutableStateOf(asset.name) }
+    var amount by remember(asset.id) { mutableStateOf(formatEditableAmount(asset.amount)) }
+    var selectedType by remember(asset.id) { mutableStateOf(asset.type) }
+    var typeSheetOpen by remember { mutableStateOf(false) }
+    val amountVal = parseMoneyInput(amount)
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Editar Activo") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nombre (Opcional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = { Text("Valor / Monto ($)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = when (selectedType) {
-                            AssetType.INVERSION -> "Inversión"
-                            AssetType.INMUEBLE -> "Inmueble"
-                            AssetType.VEHICULO -> "Vehículo"
-                            AssetType.OTRO -> "Otro Activo"
-                        },
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Tipo de Activo") },
-                        trailingIcon = {
-                            IconButton(onClick = { dropdownExpanded = true }) {
-                                Icon(Icons.Default.ArrowDropDown, null)
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { dropdownExpanded = true }
-                    )
-
-                    DropdownMenu(
-                        expanded = dropdownExpanded,
-                        onDismissRequest = { dropdownExpanded = false },
-                        modifier = Modifier.fillMaxWidth(0.9f)
-                    ) {
-                        AssetType.entries.forEach { type ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        when (type) {
-                                            AssetType.INVERSION -> "Inversión"
-                                            AssetType.INMUEBLE -> "Inmueble"
-                                            AssetType.VEHICULO -> "Vehículo"
-                                            AssetType.OTRO -> "Otro Activo"
-                                        }
-                                    )
-                                },
-                                onClick = {
-                                    selectedType = type
-                                    dropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            val amountVal = amount.toDoubleOrNull() ?: 0.0
-            val isValid = amountVal > 0.0
-
-            Button(
-                onClick = { 
-                    val defaultName = when (selectedType) {
-                        AssetType.INVERSION -> "Inversión"
-                        AssetType.INMUEBLE -> "Inmueble"
-                        AssetType.VEHICULO -> "Vehículo"
-                        AssetType.OTRO -> "Otro Activo"
-                    }
-                    val finalName = name.trim().ifBlank { defaultName }
-                    onConfirm(finalName, amountVal, selectedType) 
-                },
-                enabled = isValid
-            ) {
-                Text("Guardar Cambios")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
+    ActionSheet(
+        title = "Editar activo",
+        onDismiss = onDismiss
+    ) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Nombre") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = MaterialTheme.shapes.small
+        )
+        MoneyInputField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "Valor",
+            isError = amount.isNotBlank() && amountVal == null,
+            supportingText = if (amount.isNotBlank() && amountVal == null) "Monto inválido" else null
+        )
+        OutlinedButton(
+            onClick = { typeSheetOpen = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(assetTypeIcon(selectedType), contentDescription = null, tint = assetTypeColor(selectedType))
+            Spacer(Modifier.width(8.dp))
+            Text(assetTypeLabel(selectedType), modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
         }
-    )
+        SheetActions(
+            primaryLabel = "Guardar",
+            canSubmit = amountVal != null && amountVal > 0.0,
+            onDismiss = onDismiss,
+            onSubmit = {
+                val defaultName = assetTypeLabel(selectedType)
+                onConfirm(name.trim().ifBlank { defaultName }, amountVal ?: return@SheetActions, selectedType)
+            }
+        )
+    }
+
+    if (typeSheetOpen) {
+        QuickSelectSheet(
+            title = "Tipo de activo",
+            options = assetTypeOptions(),
+            selectedValue = selectedType,
+            onDismiss = { typeSheetOpen = false },
+            onSelect = { selectedType = it }
+        )
+    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddIncomeDialog(
+private fun AddIncomeSheet(
     accounts: List<AccountEntity>,
     categories: List<CategoryEntity>,
     onDismiss: () -> Unit,
@@ -1035,138 +916,203 @@ private fun AddIncomeDialog(
 ) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-
-    val defaultCategory = categories.find { it.id == "cat_ingresos" }
-    var selectedCategory by remember { mutableStateOf(defaultCategory ?: categories.firstOrNull()) }
-    var categoryDropdownExpanded by remember { mutableStateOf(false) }
-
-    // Filtrar cuentas para depositar (no tarjetas de crédito)
+    val amountVal = parseMoneyInput(amount)
     val depositAccounts = remember(accounts) {
         accounts.filter { it.type != com.ivan.finanzapp.domain.model.AccountType.TARJETA_CREDITO }
     }
-    var selectedAccount by remember { mutableStateOf(depositAccounts.firstOrNull()) }
-    var accountDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedAccountId by remember(depositAccounts) { mutableStateOf(depositAccounts.firstOrNull()?.id) }
+    val defaultCategory = categories.find { it.id == "cat_ingresos" }
+    var selectedCategoryId by remember(categories) { mutableStateOf(defaultCategory?.id ?: categories.firstOrNull()?.id) }
+    var accountSheetOpen by remember { mutableStateOf(false) }
+    var categorySheetOpen by remember { mutableStateOf(false) }
+    val selectedAccount = depositAccounts.firstOrNull { it.id == selectedAccountId }
+    val selectedCategory = categories.firstOrNull { it.id == selectedCategoryId }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Registrar Ingreso Manual") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "Registra un ingreso que hayas recibido. Este movimiento se guardará en tu historial y sumará al saldo de la cuenta elegida.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+    ActionSheet(
+        title = "Registrar ingreso",
+        onDismiss = onDismiss
+    ) {
+        MoneyInputField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "Valor",
+            isError = amount.isNotBlank() && amountVal == null,
+            supportingText = if (amount.isNotBlank() && amountVal == null) "Monto inválido" else null
+        )
+        OutlinedTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = { Text("Fuente") },
+            placeholder = { Text("Salario, arriendo, transferencia") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = MaterialTheme.shapes.small
+        )
+        SelectButton(
+            label = "Cuenta",
+            value = selectedAccount?.name ?: "Seleccionar cuenta",
+            icon = Icons.Default.AccountBalanceWallet,
+            onClick = { accountSheetOpen = true }
+        )
+        SelectButton(
+            label = "Categoría",
+            value = selectedCategory?.name ?: "Sin categoría",
+            icon = Icons.Default.Category,
+            onClick = { categorySheetOpen = true }
+        )
+        SheetActions(
+            primaryLabel = "Registrar",
+            canSubmit = amountVal != null && amountVal > 0.0 && selectedAccountId != null,
+            onDismiss = onDismiss,
+            onSubmit = {
+                onConfirm(
+                    description.trim().ifBlank { "Ingreso manual" },
+                    amountVal ?: return@SheetActions,
+                    selectedAccountId ?: return@SheetActions,
+                    selectedCategoryId
                 )
+            }
+        )
+    }
 
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = { Text("Valor / Monto ($)") },
-                    placeholder = { Text("Ej. 1.200.000") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+    if (accountSheetOpen) {
+        QuickSelectSheet(
+            title = "Cuenta",
+            options = depositAccounts.map { account ->
+                QuickSelectOption(
+                    value = account.id,
+                    title = account.name,
+                    subtitle = account.type.displayName,
+                    icon = Icons.Default.AccountBalanceWallet
                 )
+            },
+            selectedValue = selectedAccountId,
+            onDismiss = { accountSheetOpen = false },
+            onSelect = { selectedAccountId = it }
+        )
+    }
 
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Fuente / Descripción") },
-                    placeholder = { Text("Ej. Salario, Rendimientos, Pago de amigo") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+    if (categorySheetOpen) {
+        QuickSelectSheet(
+            title = "Categoría",
+            options = listOf(
+                QuickSelectOption<String?>(
+                    value = null,
+                    title = "Sin categoría",
+                    icon = Icons.Default.Clear
                 )
+            ) + categories.map { category ->
+                QuickSelectOption<String?>(
+                    value = category.id,
+                    title = category.name,
+                    color = runCatching { Color(android.graphics.Color.parseColor(category.color)) }
+                        .getOrDefault(Color.Gray)
+                )
+            },
+            selectedValue = selectedCategoryId,
+            onDismiss = { categorySheetOpen = false },
+            onSelect = { selectedCategoryId = it }
+        )
+    }
+}
 
-                // Dropdown de Cuenta de Destino
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = selectedAccount?.name ?: "Seleccionar cuenta",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Cuenta de Destino") },
-                        trailingIcon = {
-                            IconButton(onClick = { accountDropdownExpanded = true }) {
-                                Icon(Icons.Default.ArrowDropDown, null)
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { accountDropdownExpanded = true }
-                    )
-
-                    DropdownMenu(
-                        expanded = accountDropdownExpanded,
-                        onDismissRequest = { accountDropdownExpanded = false },
-                        modifier = Modifier.fillMaxWidth(0.9f)
-                    ) {
-                        depositAccounts.forEach { account ->
-                            DropdownMenuItem(
-                                text = { Text(account.name) },
-                                onClick = {
-                                    selectedAccount = account
-                                    accountDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                // Dropdown de Categoría
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = selectedCategory?.name ?: "Seleccionar categoría",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Categoría") },
-                        trailingIcon = {
-                            IconButton(onClick = { categoryDropdownExpanded = true }) {
-                                Icon(Icons.Default.ArrowDropDown, null)
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { categoryDropdownExpanded = true }
-                    )
-
-                    DropdownMenu(
-                        expanded = categoryDropdownExpanded,
-                        onDismissRequest = { categoryDropdownExpanded = false },
-                        modifier = Modifier.fillMaxWidth(0.9f)
-                    ) {
-                        categories.forEach { category ->
-                            DropdownMenuItem(
-                                text = { Text(category.name) },
-                                onClick = {
-                                    selectedCategory = category
-                                    categoryDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            val amountVal = amount.toDoubleOrNull() ?: 0.0
-            val isValid = amountVal > 0.0 && selectedAccount != null
-
-            Button(
-                onClick = { 
-                    val finalDescription = description.trim().ifBlank { "Ingreso manual" }
-                    onConfirm(finalDescription, amountVal, selectedAccount!!.id, selectedCategory?.id) 
-                },
-                enabled = isValid
-            ) {
-                Text("Registrar")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
+@Composable
+private fun SelectButton(
+    label: String,
+    value: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
-    )
+        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+    }
+}
+
+@Composable
+private fun SheetActions(
+    primaryLabel: String,
+    canSubmit: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(
+            onClick = onDismiss,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("Cancelar")
+        }
+        Button(
+            onClick = onSubmit,
+            enabled = canSubmit,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(primaryLabel)
+        }
+    }
+}
+
+private fun assetTypeOptions(): List<QuickSelectOption<AssetType>> {
+    return AssetType.entries.map { type ->
+        QuickSelectOption(
+            value = type,
+            title = assetTypeLabel(type),
+            icon = assetTypeIcon(type),
+            color = assetTypeColor(type)
+        )
+    }
+}
+
+private fun assetTypeLabel(type: AssetType): String {
+    return when (type) {
+        AssetType.INVERSION -> "Inversión"
+        AssetType.INMUEBLE -> "Inmueble"
+        AssetType.VEHICULO -> "Vehículo"
+        AssetType.OTRO -> "Otro"
+    }
+}
+
+private fun assetTypeIcon(type: AssetType): ImageVector {
+    return when (type) {
+        AssetType.INVERSION -> Icons.AutoMirrored.Filled.TrendingUp
+        AssetType.INMUEBLE -> Icons.Default.Home
+        AssetType.VEHICULO -> Icons.Default.Build
+        AssetType.OTRO -> Icons.Default.Folder
+    }
+}
+
+private fun assetTypeColor(type: AssetType): Color {
+    return when (type) {
+        AssetType.INVERSION -> Color(0xFF1976D2)
+        AssetType.INMUEBLE -> Color(0xFF7B1FA2)
+        AssetType.VEHICULO -> Color(0xFFE64A19)
+        AssetType.OTRO -> Color(0xFF616161)
+    }
 }

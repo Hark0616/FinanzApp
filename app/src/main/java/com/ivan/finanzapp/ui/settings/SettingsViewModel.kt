@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.ivan.finanzapp.BuildConfig
 import com.ivan.finanzapp.data.local.AppDatabase
+import com.ivan.finanzapp.data.local.AppearancePrefs
 import com.ivan.finanzapp.data.local.SecurePrefs
 import com.ivan.finanzapp.data.remote.LocalAiClassifier
 import com.ivan.finanzapp.data.remote.CloudSyncScheduler
@@ -39,6 +40,7 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val database: AppDatabase,
+    private val appearancePrefs: AppearancePrefs,
     private val securePrefs: SecurePrefs,
     private val accountDao: AccountDao,
     private val creditCardDao: CreditCardDao,
@@ -92,7 +94,8 @@ class SettingsViewModel @Inject constructor(
         notificationSyncLedgerDao.observeCountByStatusSince(NotificationProcessingStatus.FAILED, recentLedgerWindowStart),
         notificationSyncLedgerDao.observeLatestByStatus(NotificationProcessingStatus.PARSED),
         financialAdjustmentDao.observeRecent(limit = 8),
-        _notificationPermissionCheckTrigger
+        _notificationPermissionCheckTrigger,
+        appearancePrefs.useDynamicColor
     ) { flows ->
         @Suppress("UNCHECKED_CAST")
         val accounts = flows[0] as List<AccountEntity>
@@ -123,6 +126,7 @@ class SettingsViewModel @Inject constructor(
         val latestParsedLedger = flows[24] as NotificationSyncLedgerEntity?
         @Suppress("UNCHECKED_CAST")
         val recentAdjustments = flows[25] as List<FinancialAdjustmentEntity>
+        val useDynamicColor = flows[27] as Boolean
 
         SettingsUiState(
             isLoading = false,
@@ -144,6 +148,7 @@ class SettingsViewModel @Inject constructor(
             syncErrorMessage = syncErrorMessage,
             isAppLockEnabled = securePrefs.isAppLockEnabled(),
             isSecurityLabMode = BuildConfig.SECURITY_LAB_MODE,
+            useDynamicColor = useDynamicColor,
             latestLedgerEntry = latestLedger,
             ledgerReceivedCount = receivedCount,
             ledgerQueuedCount = queuedCount,
@@ -201,6 +206,12 @@ class SettingsViewModel @Inject constructor(
     fun setAppLockEnabled(enabled: Boolean) {
         securePrefs.setAppLockEnabled(enabled)
         _appLockChanged.update { !it }
+    }
+
+    fun setUseDynamicColor(enabled: Boolean) {
+        viewModelScope.launch {
+            appearancePrefs.setUseDynamicColor(enabled)
+        }
     }
 
     fun refreshNotificationPermission() {
