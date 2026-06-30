@@ -36,8 +36,16 @@ import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentEntity
 import com.ivan.finanzapp.data.local.entity.FinancialAdjustmentTargetType
 import com.ivan.finanzapp.domain.model.AccountType
+import com.ivan.finanzapp.ui.components.FinancialStatus
+import com.ivan.finanzapp.ui.components.FinancialStatusChip
+import com.ivan.finanzapp.ui.components.MoneyInputField
+import com.ivan.finanzapp.ui.components.OverflowActionMenu
+import com.ivan.finanzapp.ui.components.OverflowMenuAction
+import com.ivan.finanzapp.ui.components.SectionControlCard
 import com.ivan.finanzapp.ui.components.SectionTitle
+import com.ivan.finanzapp.ui.components.formatEditableAmount
 import com.ivan.finanzapp.ui.components.formatCOP
+import com.ivan.finanzapp.ui.components.parseMoneyInput
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ivan.finanzapp.ui.security.LocalDeviceAuthenticator
@@ -490,34 +498,25 @@ fun SettingsScreen(
                         }
                         if (!isCredit) {
                             item {
-                                OutlinedTextField(
+                                MoneyInputField(
                                     value = editBalance,
                                     onValueChange = { editBalance = it },
-                                    label = { Text("Nuevo saldo manual ($)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    label = "Nuevo saldo manual"
                                 )
                             }
                         } else {
                             item {
-                                OutlinedTextField(
+                                MoneyInputField(
                                     value = editCreditLimit,
                                     onValueChange = { editCreditLimit = it },
-                                    label = { Text("Cupo límite ($)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    label = "Cupo límite"
                                 )
                             }
                             item {
-                                OutlinedTextField(
+                                MoneyInputField(
                                     value = editCurrentDebt,
                                     onValueChange = { editCurrentDebt = it },
-                                    label = { Text("Deuda visible ($)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    label = "Deuda visible"
                                 )
                             }
                         }
@@ -589,44 +588,6 @@ private fun formatLastSyncTime(timestampMillis: Long): String {
     return formatter.format(Date(timestampMillis))
 }
 
-private fun parseMoneyInput(value: String): Double? {
-    val raw = value
-        .trim()
-        .replace("$", "")
-        .replace(" ", "")
-    val commaCount = raw.count { it == ',' }
-    val dotCount = raw.count { it == '.' }
-    val cleaned = when {
-        commaCount > 1 && dotCount == 0 -> raw.replace(",", "")
-        dotCount > 1 && commaCount == 0 -> raw.replace(".", "")
-        commaCount > 0 && dotCount > 0 -> {
-            if (raw.lastIndexOf(',') > raw.lastIndexOf('.')) {
-                raw.replace(".", "").replace(",", ".")
-            } else {
-                raw.replace(",", "")
-            }
-        }
-        commaCount == 1 -> {
-            val decimals = raw.substringAfterLast(',').length
-            if (decimals == 3) raw.replace(",", "") else raw.replace(",", ".")
-        }
-        dotCount == 1 -> {
-            val decimals = raw.substringAfterLast('.').length
-            if (decimals == 3) raw.replace(".", "") else raw
-        }
-        else -> raw
-    }
-    return cleaned.toDoubleOrNull()?.takeIf { it >= 0.0 }
-}
-
-private fun formatEditableAmount(value: Double): String {
-    return if (value % 1.0 == 0.0) {
-        value.toLong().toString()
-    } else {
-        value.toString()
-    }
-}
-
 private fun requestLocalSecurityConfirmation(
     context: Context,
     title: String,
@@ -683,11 +644,18 @@ private fun CaptureHealthCard(
         state.ledgerParsedCount > 0 -> "Captura operativa"
         else -> "Captura en observación"
     }
-    val statusColor = when {
-        !state.isNotificationListenerEnabled -> MaterialTheme.colorScheme.error
-        state.ledgerRecentFailedCount > 0 -> MaterialTheme.colorScheme.error
-        total == 0 -> MaterialTheme.colorScheme.onSurfaceVariant
-        else -> MaterialTheme.colorScheme.primary
+    val financialStatus = when {
+        !state.isNotificationListenerEnabled -> FinancialStatus.Error
+        state.ledgerRecentFailedCount > 0 -> FinancialStatus.Error
+        total == 0 -> FinancialStatus.Neutral
+        state.ledgerQueuedCount > 0 -> FinancialStatus.Warning
+        else -> FinancialStatus.Positive
+    }
+    val statusIcon = when (financialStatus) {
+        FinancialStatus.Positive -> Icons.Default.CheckCircle
+        FinancialStatus.Warning -> Icons.Default.Warning
+        FinancialStatus.Error -> Icons.Default.Error
+        FinancialStatus.Neutral -> Icons.Default.Info
     }
     val latestReceivedText = state.latestLedgerEntry?.let {
         val status = it.status.name.lowercase().replaceFirstChar(Char::titlecase)
@@ -738,11 +706,10 @@ private fun CaptureHealthCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Text(
-                    text = statusTitle,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = statusColor,
-                    fontWeight = FontWeight.SemiBold
+                FinancialStatusChip(
+                    label = statusTitle,
+                    status = financialStatus,
+                    icon = statusIcon
                 )
             }
 
@@ -957,56 +924,24 @@ private fun AppearanceSettingsCard(
 ) {
     val dynamicColorAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Palette,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .size(22.dp)
-                )
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Apariencia",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = if (dynamicColorAvailable) {
-                        "Colores dinámicos del sistema, apagados por defecto."
-                    } else {
-                        "Los colores dinámicos requieren Android 12 o superior."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+    SectionControlCard(
+        title = "Apariencia",
+        subtitle = if (dynamicColorAvailable) {
+            "Colores dinámicos del sistema, apagados por defecto."
+        } else {
+            "Los colores dinámicos requieren Android 12 o superior."
+        },
+        icon = Icons.Default.Palette,
+        iconTint = MaterialTheme.colorScheme.secondary,
+        tonalColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
+        trailing = {
             Switch(
                 checked = dynamicColorAvailable && useDynamicColor,
                 onCheckedChange = onUseDynamicColorChange,
                 enabled = dynamicColorAvailable
             )
         }
-    }
+    )
 }
 
 @Composable
@@ -1540,12 +1475,21 @@ private fun AccountItemRow(
                     color = valueColor,
                     fontWeight = FontWeight.SemiBold
                 )
-                IconButton(onClick = onEditClick) {
-                    Icon(Icons.Default.Edit, contentDescription = "Corrección auditada", tint = Color.Gray)
-                }
-                IconButton(onClick = onDeleteClick) {
-                    Icon(Icons.Default.Delete, contentDescription = "Eliminar cuenta", tint = Color.Gray)
-                }
+                OverflowActionMenu(
+                    actions = listOf(
+                        OverflowMenuAction(
+                            label = "Corrección auditada",
+                            icon = Icons.Default.Edit,
+                            onClick = onEditClick
+                        ),
+                        OverflowMenuAction(
+                            label = "Eliminar cuenta",
+                            icon = Icons.Default.Delete,
+                            destructive = true,
+                            onClick = onDeleteClick
+                        )
+                    )
+                )
             }
         }
     }
@@ -1918,13 +1862,10 @@ private fun AddAccountDialog(
 
                 if (type != AccountType.TARJETA_CREDITO) {
                     item {
-                        OutlinedTextField(
+                        MoneyInputField(
                             value = initialBalance,
                             onValueChange = { initialBalance = it },
-                            label = { Text("Saldo Actual ($)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            label = "Saldo actual"
                         )
                     }
                 }
@@ -1932,13 +1873,10 @@ private fun AddAccountDialog(
                 // Mostrar campos adicionales si es Tarjeta de Crédito
                 if (type == AccountType.TARJETA_CREDITO) {
                     item {
-                        OutlinedTextField(
+                        MoneyInputField(
                             value = creditLimit,
                             onValueChange = { creditLimit = it },
-                            label = { Text("Cupo Limite de Crédito ($)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            label = "Cupo límite de crédito"
                         )
                     }
 
@@ -1979,10 +1917,10 @@ private fun AddAccountDialog(
         },
         confirmButton = {
             val isBalanceValid = if (type == AccountType.TARJETA_CREDITO) true else {
-                initialBalance.isBlank() || initialBalance.toDoubleOrNull() != null
+                initialBalance.isBlank() || parseMoneyInput(initialBalance) != null
             }
             val isLimitValid = if (type == AccountType.TARJETA_CREDITO) {
-                (creditLimit.toDoubleOrNull() ?: 0.0) > 0.0
+                (parseMoneyInput(creditLimit) ?: 0.0) > 0.0
             } else true
 
             Button(
@@ -1990,8 +1928,8 @@ private fun AddAccountDialog(
                     // Para tarjetas de crédito, la deuda siempre inicia en $0.
                     // La deuda se construye desde las Compras Diferidas dentro de cada tarjeta.
                     val balance = if (type == AccountType.TARJETA_CREDITO) 0.0
-                                  else (initialBalance.toDoubleOrNull() ?: 0.0)
-                    val limit = creditLimit.toDoubleOrNull() ?: 0.0
+                                  else (parseMoneyInput(initialBalance) ?: 0.0)
+                    val limit = parseMoneyInput(creditLimit) ?: 0.0
                     val cutoff = cutoffDay.toIntOrNull() ?: 15
                     val due = paymentDueDay.toIntOrNull() ?: 30
                     val ea = interestRateEA.toDoubleOrNull()

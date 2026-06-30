@@ -29,8 +29,13 @@ import com.ivan.finanzapp.data.local.entity.PaymentMatchTargetType
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.components.AmountText
 import com.ivan.finanzapp.ui.components.CategoryChip
+import com.ivan.finanzapp.ui.components.MoneyInputField
+import com.ivan.finanzapp.ui.components.ProgressiveFormSheet
+import com.ivan.finanzapp.ui.components.QuickSelectOption
+import com.ivan.finanzapp.ui.components.QuickSelectSheet
 import com.ivan.finanzapp.ui.components.SectionTitle
 import com.ivan.finanzapp.ui.components.formatCOP
+import com.ivan.finanzapp.ui.components.parseMoneyInput
 import com.ivan.finanzapp.ui.dashboard.TransactionWithCategory
 import com.ivan.finanzapp.ui.theme.TrafficYellow
 import java.time.Instant
@@ -409,13 +414,28 @@ fun AddTransactionDialog(
     var selectedAccountId by remember { mutableStateOf<String?>(null) }
     var selectedCategoryId by remember { mutableStateOf<String?>(null) }
 
-    var accountDropdownExpanded by remember { mutableStateOf(false) }
-    var categoryDropdownExpanded by remember { mutableStateOf(false) }
+    var accountSheetOpen by remember { mutableStateOf(false) }
+    var categorySheetOpen by remember { mutableStateOf(false) }
+    val parsedAmount = parseMoneyInput(amountStr)
+    val currentAccountName = selectedAccountId?.let { id ->
+        accounts.find { it.id == id }?.name
+    } ?: "Sin asignar"
+    val currentCategoryName = selectedCategoryId?.let { id ->
+        categories.find { it.id == id }?.name
+    } ?: "Sin categoría"
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Registrar Movimiento", fontWeight = FontWeight.Bold) },
-        text = {
+    ProgressiveFormSheet(
+        title = "Registrar Movimiento",
+        subtitle = "Captura rápida con cuenta y categoría opcionales.",
+        onDismiss = onDismiss,
+        primaryActionLabel = "Registrar",
+        canSubmit = (parsedAmount ?: 0.0) > 0.0 && merchant.isNotBlank(),
+        onSubmit = {
+            val amount = parsedAmount ?: return@ProgressiveFormSheet
+            onConfirm(amount, merchant, selectedType, selectedAccountId, selectedCategoryId)
+            onDismiss()
+        }
+    ) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -442,16 +462,11 @@ fun AddTransactionDialog(
                 }
 
                 // Campo de Monto
-                OutlinedTextField(
+                MoneyInputField(
                     value = amountStr,
-                    onValueChange = { amountStr = it.filter { char -> char.isDigit() } },
-                    label = { Text("Monto ($)") },
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
+                    onValueChange = { amountStr = it },
+                    label = "Monto",
+                    isError = amountStr.isNotBlank() && parsedAmount == null
                 )
 
                 // Campo de Comercio
@@ -465,98 +480,81 @@ fun AddTransactionDialog(
                 )
 
                 // Selector de Cuenta
-                val currentAccountName = selectedAccountId?.let { id -> accounts.find { it.id == id }?.name } ?: "Sin asignar (Pendiente)"
                 Text("Cuenta:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { accountDropdownExpanded = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(currentAccountName)
-                        Spacer(Modifier.weight(1f))
-                        Icon(Icons.Default.ArrowDropDown, null)
-                    }
-                    DropdownMenu(
-                        expanded = accountDropdownExpanded,
-                        onDismissRequest = { accountDropdownExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Sin asignar (Pendiente)") },
-                            onClick = {
-                                selectedAccountId = null
-                                accountDropdownExpanded = false
-                            }
+                OutlinedButton(
+                    onClick = { accountSheetOpen = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(currentAccountName)
+                    Spacer(Modifier.weight(1f))
+                    Icon(Icons.Default.ArrowDropDown, null)
+                }
+                if (accountSheetOpen) {
+                    val accountOptions = listOf(
+                        QuickSelectOption<String?>(
+                            value = null,
+                            title = "Sin asignar",
+                            subtitle = "Queda para revisión",
+                            icon = Icons.Default.Clear
                         )
-                        accounts.forEach { account ->
-                            DropdownMenuItem(
-                                text = { Text(account.name) },
-                                onClick = {
-                                    selectedAccountId = account.id
-                                    accountDropdownExpanded = false
-                                }
-                            )
-                        }
+                    ) + accounts.map { account ->
+                        QuickSelectOption<String?>(
+                            value = account.id,
+                            title = account.name,
+                            subtitle = account.type.displayName,
+                            icon = Icons.Default.AccountBalanceWallet
+                        )
                     }
+                    QuickSelectSheet(
+                        title = "Cuenta",
+                        subtitle = "Dónde se reflejó el movimiento",
+                        options = accountOptions,
+                        selectedValue = selectedAccountId,
+                        onDismiss = { accountSheetOpen = false },
+                        onSelect = { selectedAccountId = it }
+                    )
                 }
 
                 // Selector de Categoría
-                val currentCategoryName = selectedCategoryId?.let { id -> categories.find { it.id == id }?.name } ?: "Sin categoría"
                 Text("Categoría:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { categoryDropdownExpanded = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(currentCategoryName)
-                        Spacer(Modifier.weight(1f))
-                        Icon(Icons.Default.ArrowDropDown, null)
-                    }
-                    DropdownMenu(
-                        expanded = categoryDropdownExpanded,
-                        onDismissRequest = { categoryDropdownExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Sin categoría") },
-                            onClick = {
-                                selectedCategoryId = null
-                                categoryDropdownExpanded = false
-                            }
+                OutlinedButton(
+                    onClick = { categorySheetOpen = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(currentCategoryName)
+                    Spacer(Modifier.weight(1f))
+                    Icon(Icons.Default.ArrowDropDown, null)
+                }
+                if (categorySheetOpen) {
+                    val categoryOptions = listOf(
+                        QuickSelectOption<String?>(
+                            value = null,
+                            title = "Sin categoría",
+                            subtitle = "No clasificar todavía",
+                            icon = Icons.Default.Clear
                         )
-                        categories.forEach { category ->
-                            DropdownMenuItem(
-                                text = { Text(category.name) },
-                                onClick = {
-                                    selectedCategoryId = category.id
-                                    categoryDropdownExpanded = false
-                                }
-                            )
-                        }
+                    ) + categories.map { category ->
+                        QuickSelectOption<String?>(
+                            value = category.id,
+                            title = category.name,
+                            color = runCatching {
+                                Color(android.graphics.Color.parseColor(category.color))
+                            }.getOrDefault(Color.Gray)
+                        )
                     }
+                    QuickSelectSheet(
+                        title = "Categoría",
+                        subtitle = "Cómo quieres clasificarlo",
+                        options = categoryOptions,
+                        selectedValue = selectedCategoryId,
+                        onDismiss = { categorySheetOpen = false },
+                        onSelect = { selectedCategoryId = it }
+                    )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val amount = amountStr.toDoubleOrNull()
-                    if (amount != null && amount > 0 && merchant.isNotBlank()) {
-                        onConfirm(amount, merchant, selectedType, selectedAccountId, selectedCategoryId)
-                        onDismiss()
-                    }
-                },
-                enabled = amountStr.isNotBlank() && merchant.isNotBlank()
-            ) {
-                Text("Registrar")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
-        }
-    )
+    }
 }
 
 @Composable

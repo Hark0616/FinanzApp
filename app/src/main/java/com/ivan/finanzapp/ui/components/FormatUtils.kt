@@ -23,3 +23,55 @@ fun formatCOP(amount: Double, showCents: Boolean = false): String {
  * Ej: 22.5 -> "22.5%"
  */
 fun formatPercentage(value: Double): String = "%.1f%%".format(value)
+
+fun sanitizeMoneyInput(value: String, allowDecimalSeparators: Boolean = true): String {
+    return value.filter { char ->
+        char.isDigit() || (allowDecimalSeparators && (char == '.' || char == ','))
+    }
+}
+
+fun parseMoneyInput(value: String, allowNegative: Boolean = false): Double? {
+    val raw = value
+        .trim()
+        .replace("$", "")
+        .replace(" ", "")
+    if (raw.isBlank()) return null
+
+    val isNegative = raw.startsWith("-")
+    if (isNegative && !allowNegative) return null
+
+    val unsignedRaw = raw.removePrefix("-")
+    val commaCount = unsignedRaw.count { it == ',' }
+    val dotCount = unsignedRaw.count { it == '.' }
+    val cleaned = when {
+        commaCount > 1 && dotCount == 0 -> unsignedRaw.replace(",", "")
+        dotCount > 1 && commaCount == 0 -> unsignedRaw.replace(".", "")
+        commaCount > 0 && dotCount > 0 -> {
+            if (unsignedRaw.lastIndexOf(',') > unsignedRaw.lastIndexOf('.')) {
+                unsignedRaw.replace(".", "").replace(",", ".")
+            } else {
+                unsignedRaw.replace(",", "")
+            }
+        }
+        commaCount == 1 -> {
+            val decimals = unsignedRaw.substringAfterLast(',').length
+            if (decimals == 3) unsignedRaw.replace(",", "") else unsignedRaw.replace(",", ".")
+        }
+        dotCount == 1 -> {
+            val decimals = unsignedRaw.substringAfterLast('.').length
+            if (decimals == 3) unsignedRaw.replace(".", "") else unsignedRaw
+        }
+        else -> unsignedRaw
+    }
+
+    val signed = if (isNegative) "-$cleaned" else cleaned
+    return signed.toDoubleOrNull()?.takeIf { allowNegative || it >= 0.0 }
+}
+
+fun formatEditableAmount(value: Double): String {
+    return if (value % 1.0 == 0.0) {
+        value.toLong().toString()
+    } else {
+        value.toString()
+    }
+}
