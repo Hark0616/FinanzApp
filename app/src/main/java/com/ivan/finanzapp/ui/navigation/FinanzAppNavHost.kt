@@ -1,5 +1,6 @@
 package com.ivan.finanzapp.ui.navigation
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -40,11 +41,20 @@ fun FinanzAppNavHost(
                 onNavigateToTransactions = {
                     navController.navigate(Screen.Transactions.route)
                 },
+                onNavigateToReviewTransactions = {
+                    navController.navigate(Uri.parse("finanzapp://transactions?action=view_review"))
+                },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
                 },
                 onNavigateToBalance = {
                     navController.navigate(Screen.Assets.route)
+                },
+                onNavigateToCreditCards = {
+                    navController.navigate(Screen.CreditCards.route)
+                },
+                onNavigateToLoans = {
+                    navController.navigate(Screen.Loans.route)
                 }
             )
         }

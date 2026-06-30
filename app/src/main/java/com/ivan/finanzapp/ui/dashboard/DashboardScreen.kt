@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,12 +39,19 @@ import com.ivan.finanzapp.ui.theme.TrafficGreen
 import com.ivan.finanzapp.ui.theme.TrafficRed
 import com.ivan.finanzapp.ui.theme.TrafficYellow
 import com.ivan.finanzapp.ui.theme.FinanzMotion
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun DashboardScreen(
     onNavigateToTransactions: () -> Unit = {},
+    onNavigateToReviewTransactions: () -> Unit = onNavigateToTransactions,
     onNavigateToSettings: () -> Unit = {},
     onNavigateToBalance: () -> Unit = {},
+    onNavigateToCreditCards: () -> Unit = {},
+    onNavigateToLoans: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -112,16 +120,6 @@ fun DashboardScreen(
             }
         }
 
-        // Banner de transacciones pendientes de revisión
-        if (state.pendingReviewCount > 0) {
-            item {
-                PendingReviewBanner(
-                    count = state.pendingReviewCount,
-                    onClick = onNavigateToTransactions
-                )
-            }
-        }
-
         // Card de balance total con gradiente
         item {
             BalanceTotalCard(
@@ -138,6 +136,22 @@ fun DashboardScreen(
                 totalIncomes = state.totalIncomesThisMonth,
                 totalDebt = state.totalDebtInstallmentsThisMonth,
                 onClick = onNavigateToBalance
+            )
+        }
+
+        item {
+            ActionSignalsSection(
+                state = state,
+                onReviewClick = onNavigateToReviewTransactions,
+                onNextPaymentClick = {
+                    when (state.nextPaymentTarget) {
+                        NextPaymentTarget.CREDIT_CARD -> onNavigateToCreditCards()
+                        NextPaymentTarget.LOAN -> onNavigateToLoans()
+                        null -> onNavigateToBalance()
+                    }
+                },
+                onCaptureClick = onNavigateToSettings,
+                onFlowClick = onNavigateToBalance
             )
         }
 
@@ -279,6 +293,156 @@ private fun PendingReviewBanner(count: Int, onClick: () -> Unit) {
 }
 
 @Composable
+private fun ActionSignalsSection(
+    state: DashboardUiState,
+    onReviewClick: () -> Unit,
+    onNextPaymentClick: () -> Unit,
+    onCaptureClick: () -> Unit,
+    onFlowClick: () -> Unit
+) {
+    val captureState = when {
+        state.captureFailedRecentCount > 0 -> SignalStyle(
+            title = "Con error",
+            color = TrafficRed,
+            subtitle = "${state.captureFailedRecentCount} fallos recientes"
+        )
+        state.captureQueuedCount > 0 -> SignalStyle(
+            title = "Pendiente",
+            color = TrafficYellow,
+            subtitle = "${state.captureQueuedCount} por leer"
+        )
+        state.isNotificationPermissionGranted -> SignalStyle(
+            title = "Captura activa",
+            color = TrafficGreen,
+            subtitle = latestCaptureText(state.latestParsedAt)
+        )
+        else -> SignalStyle(
+            title = "Pendiente",
+            color = TrafficYellow,
+            subtitle = "Activa el permiso"
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            DashboardSignalCard(
+                title = "Por revisar",
+                value = state.pendingReviewCount.toString(),
+                subtitle = if (state.pendingReviewCount == 1) "Movimiento pendiente" else "Movimientos pendientes",
+                icon = Icons.Default.Warning,
+                color = if (state.pendingReviewCount > 0) TrafficYellow else TrafficGreen,
+                onClick = onReviewClick,
+                modifier = Modifier.weight(1f)
+            )
+            DashboardSignalCard(
+                title = "Próximo pago",
+                value = state.nextPaymentLabel?.let { formatCOP(state.nextPaymentAmount) } ?: "Sin pagos",
+                subtitle = state.nextPaymentLabel?.let {
+                    "$it · ${paymentDaysText(state.nextPaymentDays)}"
+                } ?: "Tarjetas y créditos al día",
+                icon = Icons.Default.Event,
+                color = paymentSignalColor(state.nextPaymentDays),
+                onClick = onNextPaymentClick,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            DashboardSignalCard(
+                title = captureState.title,
+                value = if (state.captureRecentCount > 0) "${state.captureRecentCount} leídas" else "Sin lecturas",
+                subtitle = captureState.subtitle,
+                icon = Icons.Default.Notifications,
+                color = captureState.color,
+                onClick = onCaptureClick,
+                modifier = Modifier.weight(1f)
+            )
+            DashboardSignalCard(
+                title = if (state.disposableCashFlow < 0.0) "Flujo negativo" else "Flujo OK",
+                value = formatCOP(state.disposableCashFlow),
+                subtitle = "Compromisos ${formatPercentage(state.debtLoadRatio * 100)}",
+                icon = Icons.AutoMirrored.Filled.TrendingUp,
+                color = if (state.disposableCashFlow < 0.0) TrafficRed else TrafficGreen,
+                onClick = onFlowClick,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardSignalCard(
+    title: String,
+    value: String,
+    subtitle: String,
+    icon: ImageVector,
+    color: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .heightIn(min = 118.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        ),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun BalanceTotalCard(
     totalBalance: Double,
     isExpanded: Boolean,
@@ -303,7 +467,7 @@ private fun BalanceTotalCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Balance total",
+                    "Disponible en cuentas",
                     color = Color.White.copy(alpha = 0.85f),
                     fontSize = 14.sp
                 )
@@ -584,7 +748,7 @@ private fun DisposableCashFlowCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Flujo de Caja Disponible (Mes)",
+                    "Después de pagos del mes",
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
@@ -626,7 +790,7 @@ private fun DisposableCashFlowCard(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        "Deudas Comprometidas",
+                        "Compromisos",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                     )
@@ -640,4 +804,35 @@ private fun DisposableCashFlowCard(
             }
         }
     }
+}
+
+private data class SignalStyle(
+    val title: String,
+    val color: Color,
+    val subtitle: String
+)
+
+private fun paymentDaysText(days: Int?): String {
+    return when {
+        days == null -> "Sin fecha"
+        days < 0 -> "Vencido"
+        days == 0 -> "Hoy"
+        days == 1 -> "Mañana"
+        else -> "En $days días"
+    }
+}
+
+private fun paymentSignalColor(days: Int?): Color {
+    return when {
+        days == null -> TrafficGreen
+        days <= 3 -> TrafficRed
+        days <= 7 -> TrafficYellow
+        else -> TrafficGreen
+    }
+}
+
+private fun latestCaptureText(latestParsedAt: Long?): String {
+    if (latestParsedAt == null) return "Sin lecturas recientes"
+    val formatter = DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.forLanguageTag("es-CO"))
+    return "Última ${Instant.ofEpochMilli(latestParsedAt).atZone(ZoneId.systemDefault()).format(formatter)}"
 }

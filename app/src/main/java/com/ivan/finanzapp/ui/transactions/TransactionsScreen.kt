@@ -63,9 +63,15 @@ fun TransactionsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
-    var activeFilter by remember { mutableStateOf(
-        if (action == "view_unclassified") TransactionFilter.UNCLASSIFIED else TransactionFilter.ALL
-    ) }
+    var activeFilter by remember(action) {
+        mutableStateOf(
+            when (action) {
+                "view_review" -> TransactionFilter.PENDING_REVIEW
+                "view_unclassified" -> TransactionFilter.UNCLASSIFIED
+                else -> TransactionFilter.ALL
+            }
+        )
+    }
 
     var selectedTransactionForReview by remember { mutableStateOf<TransactionWithCategory?>(null) }
 

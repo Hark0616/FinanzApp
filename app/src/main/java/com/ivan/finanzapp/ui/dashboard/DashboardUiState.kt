@@ -23,8 +23,22 @@ data class DashboardUiState(
     val isAccountsExpanded: Boolean = true,
     val disposableCashFlow: Double = 0.0,
     val totalIncomesThisMonth: Double = 0.0,
-    val totalDebtInstallmentsThisMonth: Double = 0.0
+    val totalDebtInstallmentsThisMonth: Double = 0.0,
+    val captureRecentCount: Int = 0,
+    val captureQueuedCount: Int = 0,
+    val captureFailedRecentCount: Int = 0,
+    val latestParsedAt: Long? = null,
+    val nextPaymentLabel: String? = null,
+    val nextPaymentAmount: Double = 0.0,
+    val nextPaymentDays: Int? = null,
+    val nextPaymentTarget: NextPaymentTarget? = null,
+    val debtLoadRatio: Double = 0.0
 )
+
+enum class NextPaymentTarget {
+    CREDIT_CARD,
+    LOAN
+}
 
 data class AccountWithBalance(
     val account: AccountEntity,
