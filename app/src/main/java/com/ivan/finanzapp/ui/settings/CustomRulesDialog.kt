@@ -1103,7 +1103,7 @@ private fun Step4PreviewSave(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Resultados del Procesamiento (Vista Previa)",
+                        text = "Resultados de lectura (vista previa)",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold

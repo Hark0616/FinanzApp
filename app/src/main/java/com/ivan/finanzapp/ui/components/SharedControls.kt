@@ -2,6 +2,8 @@ package com.ivan.finanzapp.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -279,6 +282,8 @@ fun ProgressiveFormSheet(
     content: @Composable ColumnScope.() -> Unit
 ) {
     var showAdvanced by remember { mutableStateOf(false) }
+    val maxFormHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.55f)
+        .coerceAtMost(520.dp)
 
     ActionSheet(
         title = title,
@@ -287,18 +292,27 @@ fun ProgressiveFormSheet(
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            content()
-            if (advancedLabel != null && advancedContent != null) {
-                TextButton(onClick = { showAdvanced = !showAdvanced }) {
-                    Text(if (showAdvanced) "Ocultar $advancedLabel" else advancedLabel)
-                    Spacer(Modifier.width(4.dp))
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(18.dp))
-                }
-                if (showAdvanced) {
-                    advancedContent()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxFormHeight)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                content()
+                if (advancedLabel != null && advancedContent != null) {
+                    TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                        Text(if (showAdvanced) "Ocultar $advancedLabel" else advancedLabel)
+                        Spacer(Modifier.width(4.dp))
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                    if (showAdvanced) {
+                        advancedContent()
+                    }
                 }
             }
             Row(
