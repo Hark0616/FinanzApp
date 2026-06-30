@@ -44,6 +44,9 @@ fun FinanzAppNavHost(
                 onNavigateToReviewTransactions = {
                     navController.navigate(Uri.parse("finanzapp://transactions?action=view_review"))
                 },
+                onNavigateToUnclassifiedTransactions = {
+                    navController.navigate(Uri.parse("finanzapp://transactions?action=view_unclassified"))
+                },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
                 },

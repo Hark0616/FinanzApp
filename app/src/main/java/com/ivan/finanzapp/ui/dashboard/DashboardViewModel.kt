@@ -44,8 +44,6 @@ class DashboardViewModel @Inject constructor(
     private val calculator: CreditCardCalculator
 ) : ViewModel() {
 
-    private val _isAccountsExpanded = MutableStateFlow(true)
-
     /** Rango del mes actual en milisegundos, para filtrar gastos. */
     private val monthStart: Long
         get() {
@@ -147,6 +145,7 @@ class DashboardViewModel @Inject constructor(
 
         // Transacciones pendientes de revisión
         val pendingCount = transactions.count { it.needsReview }
+        val unclassifiedCount = transactions.count { it.accountId == null }
 
         // Calcular flujo de caja disponible de este mes
         val totalIncomesThisMonth = transactions
@@ -159,6 +158,9 @@ class DashboardViewModel @Inject constructor(
         }
 
         val totalLoanInstallments = loans.filter { it.remainingAmount > 0 }.sumOf { it.monthlyInstallmentAmount }
+        val totalCreditCardDebt = cards.sumOf { it.currentDebt }
+        val totalLoanRemaining = loans.filter { it.remainingAmount > 0 }.sumOf { it.remainingAmount }
+        val dominantSpending = spendingItems.firstOrNull()
         val totalDebtInstallmentsThisMonth = totalCreditCardInstallments + totalLoanInstallments
         val disposableCashFlow = totalIncomesThisMonth - totalDebtInstallmentsThisMonth
         val debtLoadRatio = when {
@@ -198,10 +200,15 @@ class DashboardViewModel @Inject constructor(
             recentTransactions = recentTransactions,
             monthlySpendingByCategory = spendingItems,
             pendingReviewCount = pendingCount,
-            isAccountsExpanded = true,
+            unclassifiedTransactionCount = unclassifiedCount,
             disposableCashFlow = disposableCashFlow,
             totalIncomesThisMonth = totalIncomesThisMonth,
             totalDebtInstallmentsThisMonth = totalDebtInstallmentsThisMonth,
+            totalCreditCardDebt = totalCreditCardDebt,
+            totalLoanRemaining = totalLoanRemaining,
+            monthlySpendingTotal = totalSpent,
+            dominantSpendingCategoryName = dominantSpending?.let { it.category?.name ?: "Sin categoría" },
+            dominantSpendingPercentage = dominantSpending?.percentage ?: 0.0,
             nextPaymentLabel = nextPayment?.label,
             nextPaymentAmount = nextPayment?.amount ?: 0.0,
             nextPaymentDays = nextPayment?.days,
@@ -224,11 +231,9 @@ class DashboardViewModel @Inject constructor(
 
     val uiState: StateFlow<DashboardUiState> = combine(
         _dbDataFlow,
-        _isAccountsExpanded,
         _permissionCheckTrigger
-    ) { dbState, isExpanded, _ ->
+    ) { dbState, _ ->
         dbState.copy(
-            isAccountsExpanded = isExpanded,
             isNotificationPermissionGranted = isNotificationListenerEnabled()
         )
     }.stateIn(
@@ -239,10 +244,6 @@ class DashboardViewModel @Inject constructor(
 
     fun checkNotificationPermission() {
         _permissionCheckTrigger.update { it + 1 }
-    }
-
-    fun toggleAccountsExpanded() {
-        _isAccountsExpanded.update { !it }
     }
 
     /**
