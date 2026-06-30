@@ -6,46 +6,41 @@ import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 object WidgetUpdater {
     private const val TAG = "WidgetUpdater"
-    private val scope = CoroutineScope(Dispatchers.Default)
+    private const val DEFAULT_DEBOUNCE_MILLIS = 500L
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var updateJob: Job? = null
 
     @Synchronized
-    fun updateAllWidgets(context: Context) {
+    fun updateAllWidgets(
+        context: Context,
+        debounceMillis: Long = DEFAULT_DEBOUNCE_MILLIS
+    ) {
         val appContext = context.applicationContext
         updateJob?.cancel()
         updateJob = scope.launch {
-            delay(500) // Debounce delay to prevent multiple rapid database writes triggering excessive updates
+            if (debounceMillis > 0L) {
+                delay(debounceMillis)
+            }
             Log.d(TAG, "Triggering update for all Glance widgets...")
-            try {
-                FinanzAppWidget().updateAll(appContext)
-            } catch (e: Throwable) {
-                Log.e(TAG, "Failed to update FinanzAppWidget", e)
-            }
-            try {
-                DisponibleNetoWidget().updateAll(appContext)
-            } catch (e: Throwable) {
-                Log.e(TAG, "Failed to update DisponibleNetoWidget", e)
-            }
-            try {
-                AutonomiaWidget().updateAll(appContext)
-            } catch (e: Throwable) {
-                Log.e(TAG, "Failed to update AutonomiaWidget", e)
-            }
-            try {
-                ProximoVencimientoWidget().updateAll(appContext)
-            } catch (e: Throwable) {
-                Log.e(TAG, "Failed to update ProximoVencimientoWidget", e)
-            }
-            try {
-                UltimosMovimientosWidget().updateAll(appContext)
-            } catch (e: Throwable) {
-                Log.e(TAG, "Failed to update UltimosMovimientosWidget", e)
-            }
+            updateWidget("FinanzAppWidget") { FinanzAppWidget().updateAll(appContext) }
+            updateWidget("DisponibleNetoWidget") { DisponibleNetoWidget().updateAll(appContext) }
+            updateWidget("AutonomiaWidget") { AutonomiaWidget().updateAll(appContext) }
+            updateWidget("ProximoVencimientoWidget") { ProximoVencimientoWidget().updateAll(appContext) }
+            updateWidget("UltimosMovimientosWidget") { UltimosMovimientosWidget().updateAll(appContext) }
+        }
+    }
+
+    private suspend fun updateWidget(name: String, update: suspend () -> Unit) {
+        try {
+            update()
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to update $name", e)
         }
     }
 }

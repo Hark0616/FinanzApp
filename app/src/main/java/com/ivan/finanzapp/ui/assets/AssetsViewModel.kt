@@ -1,5 +1,6 @@
 package com.ivan.finanzapp.ui.assets
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ivan.finanzapp.data.local.dao.*
@@ -10,7 +11,9 @@ import com.ivan.finanzapp.data.remote.CloudSyncScheduler
 import com.ivan.finanzapp.domain.calculator.CreditCardCalculator
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.dashboard.TransactionWithCategory
+import com.ivan.finanzapp.ui.widget.WidgetUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -42,6 +45,7 @@ data class BalanceUiState(
 
 @HiltViewModel
 class AssetsViewModel @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val assetDao: AssetDao,
     private val accountDao: AccountDao,
     private val transactionDao: TransactionDao,
@@ -180,6 +184,7 @@ class AssetsViewModel @Inject constructor(
             )
             transactionDao.insertIfNotExists(transaction)
             accountDao.adjustBalance(accountId, +amount)
+            WidgetUpdater.updateAllWidgets(context, debounceMillis = 0L)
             cloudSyncScheduler.syncSoon()
         }
     }

@@ -1,5 +1,6 @@
 package com.ivan.finanzapp.ui.loan
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ivan.finanzapp.data.local.dao.AccountDao
@@ -13,7 +14,9 @@ import com.ivan.finanzapp.domain.model.LoanAmortizationType
 import com.ivan.finanzapp.domain.model.LoanInterestRateType
 import com.ivan.finanzapp.domain.model.AccountType
 import com.ivan.finanzapp.domain.usecase.LoanPaymentRegistrar
+import com.ivan.finanzapp.ui.widget.WidgetUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +31,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class LoansViewModel @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val loanDao: LoanDao,
     private val accountDao: AccountDao,
     private val loanPaymentDao: LoanPaymentDao,
@@ -147,6 +151,7 @@ class LoansViewModel @Inject constructor(
             )
             loanDao.upsert(loan)
             toggleAddDialog(false)
+            refreshWidgets()
             cloudSyncScheduler.syncSoon()
         }
     }
@@ -159,16 +164,23 @@ class LoansViewModel @Inject constructor(
             loanPaymentRegistrar.registerInstallmentPayment(
                 loanId = loan.id,
                 actualPaymentAmount = actualPaymentAmount
-            )
-            cloudSyncScheduler.syncSoon()
+            )?.let {
+                refreshWidgets()
+                cloudSyncScheduler.syncSoon()
+            }
         }
     }
 
     fun deleteLoan(loanId: String) {
         viewModelScope.launch {
             loanDao.delete(loanId)
+            refreshWidgets()
             cloudSyncScheduler.syncSoon()
         }
+    }
+
+    private fun refreshWidgets() {
+        WidgetUpdater.updateAllWidgets(context, debounceMillis = 0L)
     }
 }
 

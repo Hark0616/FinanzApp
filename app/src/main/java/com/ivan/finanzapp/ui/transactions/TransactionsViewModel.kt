@@ -1,5 +1,6 @@
 package com.ivan.finanzapp.ui.transactions
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
@@ -19,7 +20,9 @@ import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.domain.usecase.AddManualTransactionUseCase
 import com.ivan.finanzapp.domain.usecase.PaymentReconciliationUseCase
 import com.ivan.finanzapp.ui.dashboard.TransactionWithCategory
+import com.ivan.finanzapp.ui.widget.WidgetUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -29,6 +32,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class TransactionsViewModel @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val database: AppDatabase,
     private val transactionDao: TransactionDao,
     private val categoryDao: CategoryDao,
@@ -77,6 +81,7 @@ class TransactionsViewModel @Inject constructor(
         viewModelScope.launch {
             val tx = transactionDao.getById(transactionId) ?: return@launch
             transactionDao.update(tx.copy(needsReview = false))
+            refreshWidgets()
             cloudSyncScheduler.syncSoon()
         }
     }
@@ -85,12 +90,14 @@ class TransactionsViewModel @Inject constructor(
         viewModelScope.launch {
             val tx = transactionDao.getById(transactionId) ?: return@launch
             transactionDao.update(tx.copy(categoryId = categoryId, needsReview = false))
+            refreshWidgets()
             cloudSyncScheduler.syncSoon()
         }
     }
 
     fun updateTransactionAccount(transactionId: String, newAccountId: String?) {
         viewModelScope.launch {
+            var didUpdate = false
             database.withTransaction {
                 val tx = transactionDao.getById(transactionId) ?: return@withTransaction
                 val oldAccountId = tx.accountId
@@ -134,8 +141,12 @@ class TransactionsViewModel @Inject constructor(
 
                 // 3. Actualizar la transacción
                 transactionDao.update(tx.copy(accountId = resolvedNewAccountId, type = newType))
+                didUpdate = true
             }
-            cloudSyncScheduler.syncSoon()
+            if (didUpdate) {
+                refreshWidgets()
+                cloudSyncScheduler.syncSoon()
+            }
         }
     }
 
@@ -161,7 +172,10 @@ class TransactionsViewModel @Inject constructor(
 
     fun acceptPaymentSuggestion(suggestionId: String) {
         viewModelScope.launch {
-            paymentReconciliationUseCase.acceptSuggestion(suggestionId)
+            val result = paymentReconciliationUseCase.acceptSuggestion(suggestionId)
+            if (result.isSuccess) {
+                refreshWidgets()
+            }
         }
     }
 
@@ -173,15 +187,26 @@ class TransactionsViewModel @Inject constructor(
 
     fun deleteTransaction(transactionId: String) {
         viewModelScope.launch {
+            var didDelete = false
             database.withTransaction {
                 val tx = transactionDao.getById(transactionId)
                 if (tx != null && tx.accountId != null) {
                     revertTransactionEffect(tx.accountId, tx.id, tx.type, tx.amount)
                 }
-                transactionDao.delete(transactionId)
+                if (tx != null) {
+                    transactionDao.delete(transactionId)
+                    didDelete = true
+                }
             }
-            cloudSyncScheduler.syncSoon()
+            if (didDelete) {
+                refreshWidgets()
+                cloudSyncScheduler.syncSoon()
+            }
         }
+    }
+
+    private fun refreshWidgets() {
+        WidgetUpdater.updateAllWidgets(context, debounceMillis = 0L)
     }
 
     private suspend fun revertTransactionEffect(

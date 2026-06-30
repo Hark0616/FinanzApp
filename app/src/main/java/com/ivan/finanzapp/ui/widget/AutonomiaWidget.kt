@@ -1,7 +1,6 @@
 package com.ivan.finanzapp.ui.widget
 
 import android.content.Context
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -15,10 +14,6 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
-import com.ivan.finanzapp.data.local.dao.CategoryDao
-import com.ivan.finanzapp.data.local.dao.TransactionDao
-import com.ivan.finanzapp.data.local.entity.CategoryEntity
-import com.ivan.finanzapp.data.local.entity.TransactionEntity
 import com.ivan.finanzapp.domain.model.TransactionType
 import com.ivan.finanzapp.ui.components.formatCOP
 import dagger.hilt.android.EntryPointAccessors
@@ -56,24 +51,38 @@ class AutonomiaWidget : GlanceAppWidget() {
             }.sumOf { it.amount }
         }
 
-        val remaining = (totalBudget - monthlySpent).coerceAtLeast(0.0)
-        val percentage = if (totalBudget > 0.0) {
+        val hasMonthlyBase = totalBudget > 0.0
+        val margin = totalBudget - monthlySpent
+        val remaining = margin.coerceAtLeast(0.0)
+        val percentage = if (hasMonthlyBase) {
             ((remaining / totalBudget) * 100).toInt().coerceIn(0, 100)
         } else {
-            100
+            0
         }
 
-        val progressColor = if (percentage > 50) Color(0xFF81C784) else if (percentage > 20) Color(0xFFFFD54F) else Color(0xFFE57373)
-
-        val widgetBgColor = ColorProvider(Color(0xFF1E1E1E))
-        val textPrimaryColor = ColorProvider(Color(0xFFF5F6F8))
-        val textSecondaryColor = ColorProvider(Color(0xFF8E95A5))
+        val statusColor = when {
+            !hasMonthlyBase -> FinanzWidgetColors.TextMutedColor
+            margin < 0.0 -> FinanzWidgetColors.ErrorColor
+            percentage > 50 -> FinanzWidgetColors.SuccessColor
+            percentage > 20 -> FinanzWidgetColors.WarningColor
+            else -> FinanzWidgetColors.ErrorColor
+        }
+        val headlineText = when {
+            !hasMonthlyBase -> "Sin meta"
+            margin < 0.0 -> "Mes excedido"
+            else -> "$percentage% disponible"
+        }
+        val detailText = when {
+            !hasMonthlyBase -> "Registra ingresos"
+            margin < 0.0 -> "Faltan ${formatCOP(-margin)}"
+            else -> "Quedan ${formatCOP(remaining)}"
+        }
 
         provideContent {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .background(widgetBgColor)
+                    .background(FinanzWidgetColors.Background)
                     .cornerRadius(16.dp)
                     .padding(12.dp)
             ) {
@@ -83,30 +92,31 @@ class AutonomiaWidget : GlanceAppWidget() {
                     horizontalAlignment = Alignment.Start
                 ) {
                     Text(
-                        text = "AUTONOMÍA MENSUAL",
+                        text = "MARGEN DEL MES",
                         style = TextStyle(
-                            color = textSecondaryColor,
+                            color = FinanzWidgetColors.TextMuted,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold
                         )
                     )
                     Spacer(modifier = GlanceModifier.height(4.dp))
                     Text(
-                        text = "$percentage% restante",
+                        text = headlineText,
                         style = TextStyle(
-                            color = textPrimaryColor,
+                            color = FinanzWidgetColors.TextPrimary,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
                     )
                     Spacer(modifier = GlanceModifier.height(4.dp))
                     Text(
-                        text = "Quedan ${formatCOP(remaining)}",
+                        text = detailText,
                         style = TextStyle(
-                            color = ColorProvider(progressColor),
+                            color = ColorProvider(statusColor),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
-                        )
+                        ),
+                        maxLines = 1
                     )
                 }
             }

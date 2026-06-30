@@ -1,7 +1,6 @@
 package com.ivan.finanzapp.ui.widget
 
 import android.content.Context
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -16,7 +15,6 @@ import androidx.glance.layout.*
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 import com.ivan.finanzapp.data.local.dao.AccountDao
 import com.ivan.finanzapp.data.local.dao.CreditCardDao
 import com.ivan.finanzapp.data.local.dao.CategoryDao
@@ -64,30 +62,18 @@ class FinanzAppWidget : GlanceAppWidget() {
         
         val creditCards = accounts.filter { it.type == AccountType.TARJETA_CREDITO }
         var totalDebt = 0.0
-        val cardDebtMap = mutableMapOf<String, Double>()
         for (cardAcc in creditCards) {
             val card = creditCardDao.getByAccountId(cardAcc.id)
             if (card != null) {
                 totalDebt += card.currentDebt
-                cardDebtMap[cardAcc.id] = card.currentDebt
             }
         }
-        
-        val netBalance = totalBalance - totalDebt
-
-        // Paleta Dark Slate Premium (compatible con cualquier versión de Glance)
-        val widgetBgColor = ColorProvider(Color(0xFF1E1E1E))
-        val textPrimaryColor = ColorProvider(Color(0xFFF5F6F8))
-        val textSecondaryColor = ColorProvider(Color(0xFF8E95A5))
-        val dividerColor = ColorProvider(Color(0xFF2D323E))
-        val brandGreen = Color(0xFF2E7D32)
-        val errorRedColor = ColorProvider(Color(0xFFE57373))
 
         provideContent {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .background(widgetBgColor)
+                    .background(FinanzWidgetColors.Background)
                     .cornerRadius(16.dp)
                     .padding(16.dp)
             ) {
@@ -105,7 +91,7 @@ class FinanzAppWidget : GlanceAppWidget() {
                         Text(
                             text = "F I N A N Z A S",
                             style = TextStyle(
-                                color = textSecondaryColor,
+                                color = FinanzWidgetColors.TextMuted,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             ),
@@ -115,7 +101,7 @@ class FinanzAppWidget : GlanceAppWidget() {
                         // Botón para Registrar Gasto manual
                         Row(
                             modifier = GlanceModifier
-                                .background(brandGreen)
+                                .background(FinanzWidgetColors.PrimaryColor)
                                 .cornerRadius(8.dp)
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                                 .clickable(actionStartActivity(QuickAddActivity::class.java)),
@@ -124,7 +110,7 @@ class FinanzAppWidget : GlanceAppWidget() {
                             Text(
                                 text = "+ Registrar",
                                 style = TextStyle(
-                                    color = ColorProvider(Color.White),
+                                    color = FinanzWidgetColors.OnPrimary,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -136,20 +122,30 @@ class FinanzAppWidget : GlanceAppWidget() {
 
                     // Saldo disponible consolidado
                     Text(
-                        text = "Disponible Total",
+                        text = "Disponible ahora",
                         style = TextStyle(
-                            color = textSecondaryColor,
+                            color = FinanzWidgetColors.TextSecondary,
                             fontSize = 11.sp
                         )
                     )
                     Text(
-                        text = formatCOP(netBalance),
+                        text = formatCOP(totalBalance),
                         style = TextStyle(
-                            color = textPrimaryColor,
-                            fontSize = 20.sp,
+                            color = FinanzWidgetColors.TextPrimary,
+                            fontSize = 22.sp,
                             fontWeight = FontWeight.Bold
                         )
                     )
+                    if (totalDebt > 0.0) {
+                        Text(
+                            text = "Tarjetas deben ${formatCOP(totalDebt)}",
+                            style = TextStyle(
+                                color = FinanzWidgetColors.Error,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                    }
 
                     Spacer(modifier = GlanceModifier.height(8.dp))
 
@@ -158,7 +154,7 @@ class FinanzAppWidget : GlanceAppWidget() {
                         modifier = GlanceModifier
                             .fillMaxWidth()
                             .height(1.dp)
-                            .background(dividerColor)
+                            .background(FinanzWidgetColors.Outline)
                     )
 
                     Spacer(modifier = GlanceModifier.height(8.dp))
@@ -167,35 +163,41 @@ class FinanzAppWidget : GlanceAppWidget() {
                     Column(
                         modifier = GlanceModifier.fillMaxWidth()
                     ) {
-                        accounts.take(3).forEach { account ->
-                            Row(
-                                modifier = GlanceModifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 2.dp)
-                                    .clickable(actionStartActivity(MainActivity::class.java)),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = account.name,
-                                    style = TextStyle(
-                                        color = textPrimaryColor,
-                                        fontSize = 12.sp
-                                    ),
-                                    modifier = GlanceModifier.defaultWeight()
+                        if (normalAccounts.isEmpty()) {
+                            Text(
+                                text = "Sin cuentas registradas",
+                                style = TextStyle(
+                                    color = FinanzWidgetColors.TextMuted,
+                                    fontSize = 12.sp
                                 )
-                                
-                                val isCredit = account.type == AccountType.TARJETA_CREDITO
-                                val debt = if (isCredit) cardDebtMap[account.id] ?: 0.0 else 0.0
-                                val balanceText = if (isCredit) "Deuda: ${formatCOP(debt)}" else formatCOP(account.currentBalance)
-                                
-                                Text(
-                                    text = balanceText,
-                                    style = TextStyle(
-                                        color = if (isCredit) errorRedColor else textSecondaryColor,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
+                            )
+                        } else {
+                            normalAccounts.take(3).forEach { account ->
+                                Row(
+                                    modifier = GlanceModifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp)
+                                        .clickable(actionStartActivity(MainActivity::class.java)),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = account.name,
+                                        style = TextStyle(
+                                            color = FinanzWidgetColors.TextPrimary,
+                                            fontSize = 12.sp
+                                        ),
+                                        modifier = GlanceModifier.defaultWeight()
                                     )
-                                )
+
+                                    Text(
+                                        text = formatCOP(account.currentBalance),
+                                        style = TextStyle(
+                                            color = FinanzWidgetColors.TextSecondary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
