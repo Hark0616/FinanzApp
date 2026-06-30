@@ -1,6 +1,6 @@
 package com.ivan.finanzapp.ui.loan
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -9,12 +9,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
 import com.ivan.finanzapp.data.local.entity.AccountEntity
 import com.ivan.finanzapp.data.local.entity.LoanEntity
 import com.ivan.finanzapp.data.local.entity.LoanPaymentEntity
@@ -48,20 +49,40 @@ import kotlin.math.pow
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoansScreen(
+    navController: NavHostController,
     viewModel: LoansViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedLoanForPayment by remember { mutableStateOf<LoanEntity?>(null) }
     var loanToDelete by remember { mutableStateOf<LoanEntity?>(null) }
+    var selectedLoanIdForDetail by remember { mutableStateOf<String?>(null) }
+
+    val resetRoot by navController.currentBackStackEntry
+        ?.savedStateHandle
+        ?.getStateFlow("reset_root", false)
+        ?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(false) }
+
+    LaunchedEffect(resetRoot) {
+        if (resetRoot) {
+            selectedLoanIdForDetail = null
+            navController.currentBackStackEntry?.savedStateHandle?.set("reset_root", false)
+        }
+    }
+
+    val selectedLoan = remember(state.loans, selectedLoanIdForDetail) {
+        state.loans.find { it.id == selectedLoanIdForDetail }
+    }
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { viewModel.toggleAddDialog(true) },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Agregar crédito")
+            if (selectedLoan == null) {
+                FloatingActionButton(
+                    onClick = { viewModel.toggleAddDialog(true) },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Agregar crédito")
+                }
             }
         }
     ) { innerPadding ->
@@ -74,6 +95,15 @@ fun LoansScreen(
             ) {
                 CircularProgressIndicator()
             }
+        } else if (selectedLoan != null) {
+            LoanDetailView(
+                loan = selectedLoan,
+                lastPayment = state.latestPaymentsByLoanId[selectedLoan.id],
+                onBackClick = { selectedLoanIdForDetail = null },
+                onPayClick = { selectedLoanForPayment = selectedLoan },
+                onDeleteClick = { loanToDelete = selectedLoan },
+                modifier = Modifier.padding(innerPadding)
+            )
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -82,7 +112,10 @@ fun LoansScreen(
                     .background(MaterialTheme.colorScheme.background),
                 contentPadding = PaddingValues(bottom = 96.dp)
             ) {
-                // Tarjeta de Deuda Total con Gradiente Premium
+                item {
+                    LoansListHeader(activeCount = state.loans.size)
+                }
+
                 item {
                     TotalDebtCard(
                         totalDebt = state.totalDebt,
@@ -93,12 +126,11 @@ fun LoansScreen(
 
                 item {
                     SectionTitle(
-                        text = "Tus créditos y préstamos activos",
+                        text = "Préstamos registrados",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
 
-                // Lista de Créditos
                 if (state.loans.isEmpty()) {
                     item {
                         EmptyLoansCard()
@@ -107,9 +139,7 @@ fun LoansScreen(
                     items(state.loans, key = { it.id }) { loan ->
                         LoanCard(
                             loan = loan,
-                            lastPayment = state.latestPaymentsByLoanId[loan.id],
-                            onPayClick = { selectedLoanForPayment = loan },
-                            onDeleteClick = { loanToDelete = loan }
+                            onClick = { selectedLoanIdForDetail = loan.id }
                         )
                     }
                 }
@@ -176,6 +206,28 @@ fun LoansScreen(
                 }
             )
         }
+    }
+}
+
+@Composable
+private fun LoansListHeader(activeCount: Int) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 16.dp, bottom = 4.dp)
+    ) {
+        Text(
+            text = "Créditos",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            text = if (activeCount == 1) "1 crédito activo" else "$activeCount créditos activos",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -270,47 +322,42 @@ private fun TotalDebtCard(
     totalUnpaidInterest: Double,
     totalUnpaidCharges: Double
 ) {
-    Box(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp)
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(Color(0xFF3F2B96), Color(0xFFA8C0FF))
-                ),
-                shape = RoundedCornerShape(20.dp)
-            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        ),
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Column(Modifier.padding(24.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 "Capital pendiente en créditos",
-                color = Color.White.copy(alpha = 0.85f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold
             )
-            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 formatCOP(totalDebt),
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
-                fontSize = 36.sp,
-                lineHeight = 42.sp
+                style = MaterialTheme.typography.displaySmall
             )
             if (totalUnpaidInterest > 0.0) {
-                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "Interés no cubierto registrado: ${formatCOP(totalUnpaidInterest)}",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 13.sp,
+                    color = TrafficRed,
+                    style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold
                 )
             }
             if (totalUnpaidCharges > 0.0) {
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     "Seguros/cargos no cubiertos: ${formatCOP(totalUnpaidCharges)}",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 13.sp,
+                    color = TrafficRed,
+                    style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -321,250 +368,365 @@ private fun TotalDebtCard(
 @Composable
 private fun LoanCard(
     loan: LoanEntity,
-    lastPayment: LoanPaymentEntity?,
-    onPayClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onClick: () -> Unit
 ) {
-    val today = LocalDate.now()
-    val dueDate = Instant.ofEpochMilli(loan.nextPaymentDate).atZone(ZoneId.systemDefault()).toLocalDate()
-    val daysRemaining = (dueDate.toEpochDay() - today.toEpochDay()).toInt()
-
-    val dateColor = when {
-        daysRemaining < 0 -> TrafficRed
-        daysRemaining <= 3 -> TrafficRed
-        daysRemaining <= 7 -> TrafficYellow
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-
-    val dateText = when {
-        daysRemaining < 0 -> "Vencido hace ${-daysRemaining} días"
-        daysRemaining == 0 -> "Vence ¡Hoy!"
-        daysRemaining == 1 -> "Vence mañana"
-        else -> "Vence el ${dueDate.format(DateTimeFormatter.ofPattern("dd MMM"))} (en $daysRemaining días)"
-    }
-
-    val installmentsProgress = if (loan.totalInstallments > 0) {
-        loan.paidInstallments.toFloat() / loan.totalInstallments.toFloat()
-    } else 0f
-
-    val debtProgress = if (loan.totalAmount > 0) {
-        (loan.totalAmount - loan.remainingAmount).toFloat() / loan.totalAmount.toFloat()
-    } else 0f
-    val installmentsText = if (loan.paidInstallments > loan.totalInstallments) {
-        "Pagos registrados: ${loan.paidInstallments} (plan original: ${loan.totalInstallments})"
-    } else {
-        "Cuotas pagadas: ${loan.paidInstallments} de ${loan.totalInstallments}"
-    }
+    val debtProgress = loanDebtProgress(loan)
+    val dateText = loanDueText(loan)
+    val dateColor = loanDueColor(loan)
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(3.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Column(Modifier.padding(16.dp)) {
-            // Fila de título y eliminar
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.AccountBalance,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        loan.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                OverflowActionMenu(
-                    actions = listOf(
-                        OverflowMenuAction(
-                            label = "Eliminar crédito",
-                            icon = Icons.Default.Delete,
-                            destructive = true,
-                            onClick = onDeleteClick
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    ) {
+                        Icon(
+                            Icons.Default.AccountBalance,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(8.dp).size(22.dp)
                         )
-                    )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            loan.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        Text(
+                            dateText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = dateColor
+                        )
+                    }
+                }
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            Spacer(Modifier.height(12.dp))
-
-            // Progreso de las cuotas
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    installmentsText,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    "${(installmentsProgress * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            Spacer(Modifier.height(4.dp))
             LinearProgressIndicator(
-                progress = { installmentsProgress.coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // Progreso del monto abonado
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    "Deuda pendiente: ${formatCOP(loan.remainingAmount)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TrafficRed
-                )
-                Text(
-                    "Total: ${formatCOP(loan.totalAmount)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray
-                )
-            }
-            Spacer(Modifier.height(4.dp))
-            LinearProgressIndicator(
-                progress = { debtProgress.coerceIn(0f, 1f) },
+                progress = { debtProgress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp),
                 color = TrafficGreen,
-                trackColor = TrafficRed.copy(alpha = 0.15f)
+                trackColor = TrafficRed.copy(alpha = 0.16f)
             )
 
-            Spacer(Modifier.height(16.dp))
-
-            // Detalles financieros del crédito
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
-                    Text(
-                        if (loan.amortizationType == LoanAmortizationType.FIXED_PRINCIPAL) {
-                            "Próx. cuota est."
-                        } else {
-                            "Cuota Mensual"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.Gray
-                    )
-                    Text(
-                        formatCOP(estimatedScheduledPaymentAmount(loan)),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Tasa Interés", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
-                    Text(
-                        "${formatRatePercent(loan.interestRateInputValue)} ${loan.interestRateType.shortLabel}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    if (loan.interestRateType != LoanInterestRateType.MONTHLY_EFFECTIVE) {
-                        Text(
-                            "Eq. ${formatRatePercent(loan.monthlyInterestRate)}% mes",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.Gray
-                        )
-                    }
+                    Text("Deuda", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(formatCOP(loan.remainingAmount), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = TrafficRed)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("Día de Pago", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+                    Text("Cuota", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
-                        "Día ${loan.paymentDay}",
-                        style = MaterialTheme.typography.bodyMedium,
+                        formatCOP(estimatedScheduledPaymentAmount(loan)),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("Avance", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "${(debtProgress * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
             }
+        }
+    }
+}
 
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Método: ${loan.amortizationType.displayName}",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
+@Composable
+private fun LoanDetailView(
+    loan: LoanEntity,
+    lastPayment: LoanPaymentEntity?,
+    onBackClick: () -> Unit,
+    onPayClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp)
+        ) {
+            IconButton(onClick = onBackClick) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Volver",
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = loan.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = if (loan.remainingAmount > 0.0) loanDueText(loan) else "Crédito pagado",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (loan.remainingAmount > 0.0) loanDueColor(loan) else TrafficGreen
+                )
+            }
+            OverflowActionMenu(
+                actions = listOf(
+                    OverflowMenuAction(
+                        label = "Eliminar crédito",
+                        icon = Icons.Default.Delete,
+                        destructive = true,
+                        onClick = onDeleteClick
+                    )
+                )
             )
-            if (loan.amortizationType == LoanAmortizationType.FIXED_PRINCIPAL) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Capital mensual pactado: ${formatCOP(loan.fixedPrincipalAmount)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
+        }
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(bottom = 96.dp)
+        ) {
+            item {
+                LoanDetailHero(loan = loan)
             }
 
-            val monthlyFixedCharges = loan.monthlyInsuranceAmount + loan.monthlyFeeAmount
-            if (monthlyFixedCharges > 0.0) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Seguro/cargos en cuota: ${formatCOP(monthlyFixedCharges)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
+            item {
+                LoanPaymentPlanCard(loan = loan)
             }
-
-            Spacer(Modifier.height(16.dp))
 
             lastPayment?.let { payment ->
-                LastLoanPaymentSummary(payment = payment)
-                Spacer(Modifier.height(16.dp))
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "Último movimiento",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        LastLoanPaymentSummary(payment = payment)
+                    }
+                }
             }
 
-            // Próximo vencimiento
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Próxima cuota", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                    Text(
-                        dateText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = dateColor
-                    )
-                }
-
-                if (loan.remainingAmount > 0) {
+            item {
+                if (loan.remainingAmount > 0.0) {
                     Button(
                         onClick = onPayClick,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(16.dp)
                     ) {
-                        Text("Registrar Pago", fontSize = 13.sp)
+                        Text(
+                            text = "Registrar pago",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 } else {
                     Text(
-                        "¡Pagado!",
-                        style = MaterialTheme.typography.bodyLarge,
+                        "Este crédito ya está pagado.",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = TrafficGreen,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LoanDetailHero(loan: LoanEntity) {
+    val debtProgress = loanDebtProgress(loan)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(
+                text = "CAPITAL PENDIENTE",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Text(
+                text = formatCOP(loan.remainingAmount),
+                style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black),
+                color = if (loan.remainingAmount > 0.0) TrafficRed else TrafficGreen
+            )
+            LinearProgressIndicator(
+                progress = { debtProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp),
+                color = TrafficGreen,
+                trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                LoanMetric("Pagado", formatCOP((loan.totalAmount - loan.remainingAmount).coerceAtLeast(0.0)))
+                LoanMetric("Total", formatCOP(loan.totalAmount), alignEnd = true)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoanPaymentPlanCard(loan: LoanEntity) {
+    val installmentsText = if (loan.paidInstallments > loan.totalInstallments) {
+        "${loan.paidInstallments} pagos · plan ${loan.totalInstallments}"
+    } else {
+        "${loan.paidInstallments} de ${loan.totalInstallments}"
+    }
+    val monthlyFixedCharges = loan.monthlyInsuranceAmount + loan.monthlyFeeAmount
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(
+                text = "PLAN DE PAGO",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            LoanInfoRow(
+                icon = Icons.Default.Receipt,
+                label = if (loan.amortizationType == LoanAmortizationType.FIXED_PRINCIPAL) "Próxima cuota estimada" else "Cuota mensual",
+                value = formatCOP(estimatedScheduledPaymentAmount(loan))
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            LoanInfoRow(
+                icon = Icons.Default.Event,
+                label = "Próximo vencimiento",
+                value = loanDueText(loan),
+                valueColor = loanDueColor(loan)
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            LoanInfoRow(
+                icon = Icons.Default.CheckCircle,
+                label = "Cuotas pagadas",
+                value = installmentsText
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            LoanInfoRow(
+                icon = Icons.Default.Percent,
+                label = "Tasa declarada",
+                value = "${formatRatePercent(loan.interestRateInputValue)} ${loan.interestRateType.shortLabel}"
+            )
+            if (loan.interestRateType != LoanInterestRateType.MONTHLY_EFFECTIVE) {
+                Text(
+                    "Equivale a ${formatRatePercent(loan.monthlyInterestRate)}% mensual",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            LoanInfoRow(
+                icon = Icons.Default.AccountBalance,
+                label = "Método",
+                value = loan.amortizationType.displayName
+            )
+            if (loan.amortizationType == LoanAmortizationType.FIXED_PRINCIPAL) {
+                Text(
+                    "Capital mensual pactado: ${formatCOP(loan.fixedPrincipalAmount)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (monthlyFixedCharges > 0.0) {
+                Text(
+                    "Seguro/cargos incluidos: ${formatCOP(monthlyFixedCharges)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoanInfoRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    valueColor: Color? = null
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(8.dp).size(20.dp)
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = valueColor ?: MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoanMetric(
+    label: String,
+    value: String,
+    alignEnd: Boolean = false
+) {
+    Column(horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -585,8 +747,8 @@ private fun LastLoanPaymentSummary(payment: LoanPaymentEntity) {
             .padding(12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Último pago", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
-            Text(paymentDate, style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+            Text("Último pago", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(paymentDate, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(6.dp))
         Text(
@@ -598,7 +760,7 @@ private fun LastLoanPaymentSummary(payment: LoanPaymentEntity) {
         Text(
             "Capital: ${formatCOP(payment.principalAmount)} · Interés: ${formatCOP(payment.interestPaidAmount)}",
             style = MaterialTheme.typography.bodySmall,
-            color = Color.Gray
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (payment.extraPrincipalAmount > 0.0) {
             Spacer(Modifier.height(2.dp))
@@ -615,7 +777,7 @@ private fun LastLoanPaymentSummary(payment: LoanPaymentEntity) {
             Text(
                 "Seguro/cargos: ${formatCOP(fixedChargesPaid)}",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         if (payment.unpaidInterestAmount > 0.0) {
@@ -895,14 +1057,43 @@ private fun estimatedMaximumApplicablePayment(loan: LoanEntity): Double {
     return fixedCharges + interest + loan.remainingAmount
 }
 
-private fun formatAmountInput(value: Double): String {
-    val normalizedValue = value.coerceAtLeast(0.0)
-    return if (normalizedValue % 1.0 == 0.0) {
-        String.format(Locale.US, "%.0f", normalizedValue)
+private fun loanDebtProgress(loan: LoanEntity): Float {
+    return if (loan.totalAmount > 0.0) {
+        ((loan.totalAmount - loan.remainingAmount) / loan.totalAmount).toFloat().coerceIn(0f, 1f)
     } else {
-        String.format(Locale.US, "%.2f", normalizedValue)
-            .trimEnd('0')
-            .trimEnd('.')
+        0f
+    }
+}
+
+private fun loanDaysRemaining(loan: LoanEntity): Int {
+    val today = LocalDate.now()
+    val dueDate = Instant.ofEpochMilli(loan.nextPaymentDate)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+    return (dueDate.toEpochDay() - today.toEpochDay()).toInt()
+}
+
+private fun loanDueText(loan: LoanEntity): String {
+    val dueDate = Instant.ofEpochMilli(loan.nextPaymentDate)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+    val daysRemaining = loanDaysRemaining(loan)
+    return when {
+        loan.remainingAmount <= 0.0 -> "Crédito pagado"
+        daysRemaining < 0 -> "Vencido hace ${-daysRemaining} días"
+        daysRemaining == 0 -> "Vence hoy"
+        daysRemaining == 1 -> "Vence mañana"
+        else -> "Vence el ${dueDate.format(DateTimeFormatter.ofPattern("dd MMM"))} (en $daysRemaining días)"
+    }
+}
+
+private fun loanDueColor(loan: LoanEntity): Color {
+    val daysRemaining = loanDaysRemaining(loan)
+    return when {
+        loan.remainingAmount <= 0.0 -> TrafficGreen
+        daysRemaining <= 3 -> TrafficRed
+        daysRemaining <= 7 -> TrafficYellow
+        else -> Color.Unspecified
     }
 }
 

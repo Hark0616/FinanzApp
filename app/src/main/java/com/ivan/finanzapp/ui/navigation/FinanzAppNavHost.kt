@@ -80,7 +80,7 @@ fun FinanzAppNavHost(
         }
 
         composable(Screen.Loans.route) {
-            com.ivan.finanzapp.ui.loan.LoansScreen()
+            com.ivan.finanzapp.ui.loan.LoansScreen(navController = navController)
         }
 
         composable(Screen.Assets.route) {
